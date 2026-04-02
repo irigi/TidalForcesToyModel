@@ -1,0 +1,1398 @@
+\documentclass[journal, a4paper]{IEEEtran}
+%\documentclass[12pt,onecolumn]{IEEEtran}
+
+%\usepackage{cite}
+\usepackage{booktabs}
+\usepackage{graphicx}
+%\usepackage{psfrag}
+%\usepackage{subfigure}
+%\usepackage{hyperref}
+\usepackage{stfloats}
+\usepackage{placeins}
+\usepackage{url}
+\usepackage{cuted}
+\usepackage{lipsum}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{siunitx}
+\sisetup{output-exponent-marker=\ensuremath{\mathrm{e}}}
+
+\begin{document}
+
+\title{A Reduced Newtonian Model of Tidally Deformable Pseudo-Fluid Planets:
+Full Modal Formulation and Quadrupole Implementation}
+
+\author{Jan~Ol\v{s}ina\\[1ex] Independent Researcher, Prague, Czech Republic\\
+email: \texttt{jan.olsina@gmail.com},  ORCID: \texttt{0009-0003-9816-3958}.}
+
+
+
+\maketitle
+
+\begin{abstract}
+This paper develops a Newtonian model for tidally interacting planets whose
+surfaces deviate from exact sphericity through damped pseudo-fluid modes.
+The goal is not a full hydrodynamic interior simulation, but a structured
+reduced model that still contains the key mechanisms of tidal evolution:
+tidal bulges, gravitational backreaction of the bulges, spin torques,
+orbital circularization, spin synchronization, and obliquity damping.
+First, a general deformable-body formulation is written in which each planet
+has orbital motion, rigid-body orientation, spin, and an arbitrary set of
+surface modes. Second, a feasible all-mode approximation is introduced using
+body-frame symmetric trace-free tensors and generalized rheology with
+relaxation branches. Third, a quadrupole truncation is derived and written
+in a form directly suitable for numerical integration. Compared with the
+simplest quadrupole tide model, the upgraded version includes
+shape-dependent spin inertia, rotational flattening, and frequency-dependent
+lag through internal memory variables. The relation of the model to real
+planetary tide problems, and its status as a structured toy model rather than
+a full geophysical code, are discussed explicitly.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Tides, celestial mechanics, deformable bodies, spherical harmonics,
+quadrupole approximation, spin--orbit coupling, rheology.
+\end{IEEEkeywords}
+
+\section{Introduction}
+
+Many problems in celestial mechanics lie between two standard idealizations.
+At one extreme, planets are treated as point masses and evolve only through
+Newtonian $N$-body gravity. At the other extreme, one solves the full
+equations of fluid or viscoelastic motion in self-gravitating rotating
+bodies, including stratification, realistic rheology, and thermal physics.
+The first approach is simple but cannot represent tides. The second is
+physically rich but expensive and often problem-specific.
+
+The purpose of this work is to formulate a middle-ground model with the
+following properties:
+\begin{enumerate}
+\item full three-dimensional Newtonian orbital dynamics,
+\item explicit deformation degrees of freedom,
+\item deformation-dependent gravity,
+\item spin and orientation dynamics,
+\item dissipative tidal lag,
+\item a systematic path from a general modal model to a compact
+implementation model.
+\end{enumerate}
+
+The resulting framework is still a reduced model. It is much closer to a
+``structured toy model'' than to a full planetary interior simulation.
+However, it is not an arbitrary toy. It is designed so that the
+couplings between orbit, spin, and deformation have the correct geometric
+form, and so that increasingly refined approximations can be introduced
+without changing the overall architecture.
+
+Compared with the simplest damped-quadrupole tide model, the present version
+includes three important improvements:
+\begin{itemize}
+\item the spin inertia depends on the tidal deformation,
+\item rotational flattening is included through the same shape-dependent spin
+inertia that appears in the reduced spin kinetic energy, so the rotational
+forcing and the energy bookkeeping use one common coefficient,
+\item the dissipative response can be modeled by one or more relaxation
+branches rather than a single constant time-lag term.
+\end{itemize}
+
+These additions make the reduced model substantially more faithful to real
+tidal systems while keeping the equations in ordinary differential equation
+(ODE) form.
+
+\section{Kinematics and Variables}
+
+Consider $N$ planets indexed by $a=1,\dots,N$. For each body we introduce
+\begin{itemize}
+\item mass $M_a$,
+\item reference radius $R_a$,
+\item center-of-mass position $X_a(t)\in\mathbb{R}^3$,
+\item orientation matrix $Q_a(t)\in SO(3)$,
+\item body-frame angular velocity $\Omega_a(t)\in\mathbb{R}^3$.
+\end{itemize}
+
+The orientation evolves according to
+\begin{equation}
+\dot Q_a = Q_a \widehat{\Omega}_a,
+\label{eq:Qdot}
+\end{equation}
+where $\widehat{\Omega}_a$ is the skew-symmetric matrix satisfying
+\begin{equation}
+\widehat{\Omega}_a v = \Omega_a \times v.
+\end{equation}
+
+A point $y$ in the body frame corresponds to inertial position
+\begin{equation}
+x = X_a + Q_a y.
+\label{eq:body-to-inertial}
+\end{equation}
+
+This explicit separation between inertial and body frames is essential. It
+avoids fictitious torques in the reduced equations and makes it possible to
+describe tides by body-frame variables while still computing forces and
+torques in the inertial frame.
+
+\section{Surface Description and Exact Deformable Body}
+
+\subsection{Surface shape}
+
+Assume the body remains star-shaped with respect to its center. Its surface
+in the body frame is written as
+\begin{equation}
+r = \mathcal{R}_a(\hat y,t)
+   = R_a\bigl(1+u_a(\hat y,t)\bigr),
+\label{eq:surface}
+\end{equation}
+where $\hat y \in S^2$ and $u_a$ is the dimensionless shape field.
+
+Expand the shape in spherical harmonics:
+\begin{equation}
+u_a(\hat y,t)
+=
+\sum_{\ell=0}^{\infty}
+\sum_{m=-\ell}^{\ell}
+q_{a\ell m}(t)\,Y_{\ell m}(\hat y).
+\label{eq:u-spherical}
+\end{equation}
+
+The occupied body-frame volume is
+\begin{equation}
+V_a(t)
+=
+\left\{
+y\in\mathbb{R}^3:
+0\le |y|<\mathcal{R}_a(\hat y,t)
+\right\}.
+\label{eq:Va}
+\end{equation}
+
+\subsection{Constraints}
+
+For an incompressible pseudo-fluid, the volume is fixed:
+\begin{equation}
+\frac{1}{3}\int_{S^2}
+\mathcal{R}_a(\hat y,t)^3\,d\Omega
+=
+\frac{4\pi}{3}R_a^3.
+\label{eq:volume}
+\end{equation}
+
+The body-frame center of mass is fixed at the origin:
+\begin{equation}
+\int_{V_a(t)} y\,d^3y = 0.
+\label{eq:center}
+\end{equation}
+
+At linear order, these conditions eliminate independent $\ell=0$ and
+$\ell=1$ modes. The tidal content therefore begins at $\ell=2$.
+
+\subsection{Exact gravity}
+
+Assume uniform density inside the deformed body:
+\begin{equation}
+\rho_a(t)=\frac{M_a}{\mathrm{Vol}(V_a(t))}.
+\end{equation}
+
+The exact Newtonian potential of body $a$ is
+\begin{equation}
+\Phi_a(x,t)
+=
+-G\rho_a
+\int_{V_a(t)}
+\frac{d^3y}{|x-X_a-Q_a y|}.
+\label{eq:exactPhi}
+\end{equation}
+
+For $x$ outside the body, this admits a multipole expansion. Let
+\begin{equation}
+s = Q_a^{\top}(x-X_a).
+\end{equation}
+Then
+\begin{equation}
+\Phi_a(x,t)
+=
+-G
+\sum_{\ell=0}^{\infty}
+\sum_{m=-\ell}^{\ell}
+\frac{4\pi}{2\ell+1}
+\frac{Q_{a\ell m}(t)}{|s|^{\ell+1}}
+Y_{\ell m}(\hat s),
+\label{eq:multipolePhi}
+\end{equation}
+where
+\begin{equation}
+Q_{a\ell m}(t)
+=
+\int_{V_a(t)}
+\rho_a\,
+r^\ell
+Y_{\ell m}^{*}(\hat y)\,d^3y.
+\label{eq:exactQlm}
+\end{equation}
+
+Equivalently,
+\begin{equation}
+Q_{a\ell m}(t)
+=
+\frac{\rho_a}{\ell+3}
+\int_{S^2}
+\mathcal{R}_a(\hat y,t)^{\ell+3}
+Y_{\ell m}^{*}(\hat y)\,d\Omega.
+\label{eq:QlmSurface}
+\end{equation}
+
+This is the exact sense in which the deformation changes the gravitational
+field.
+
+\subsection{Exact pseudo-fluid motion}
+
+Let the internal motion be irrotational in the body frame:
+\begin{equation}
+w_a(y,t)=\nabla_y \phi_a(y,t),
+\qquad
+\nabla_y^2 \phi_a = 0
+\quad \text{in }V_a(t).
+\label{eq:phi}
+\end{equation}
+
+The inertial velocity is then
+\begin{equation}
+v_a(x,t)
+=
+\dot X_a + Q_a \bigl(\Omega_a \times y + \nabla_y \phi_a \bigr).
+\label{eq:v-inertial}
+\end{equation}
+
+If
+\begin{equation}
+F_a(y,t)=|y|-\mathcal{R}_a(\hat y,t),
+\end{equation}
+the kinematic boundary condition is
+\begin{equation}
+\partial_t F_a + \nabla_y F_a\cdot \nabla_y \phi_a = 0
+\quad \text{on }F_a=0.
+\label{eq:kinematic}
+\end{equation}
+
+\subsection{Exact energies}
+
+The orbital kinetic energy is
+\begin{equation}
+T_{\mathrm{orb}}
+=
+\sum_a \frac{1}{2} M_a |\dot X_a|^2.
+\label{eq:Torb}
+\end{equation}
+
+The internal-plus-spin kinetic energy is
+\begin{equation}
+T_{\mathrm{int+spin}}
+=
+\sum_a
+\frac{\rho_a}{2}
+\int_{V_a(t)}
+\left|
+\Omega_a\times y + \nabla\phi_a
+\right|^2 d^3y.
+\label{eq:Tspinfull}
+\end{equation}
+
+The self-gravity is
+\begin{equation}
+U_a^{\mathrm{self}}
+=
+-\frac{G\rho_a^2}{2}
+\int_{V_a(t)}\int_{V_a(t)}
+\frac{d^3y\,d^3z}{|y-z|}.
+\label{eq:Uself}
+\end{equation}
+
+A material or restoring energy may be added as a functional of the shape:
+\begin{equation}
+U_a^{\mathrm{mat}} = U_a^{\mathrm{mat}}[u_a].
+\label{eq:Umat}
+\end{equation}
+
+The exact mutual interaction is
+\begin{equation}
+U_{ab}
+=
+-G\rho_a\rho_b
+\int_{V_a(t)}\int_{V_b(t)}
+\frac{d^3y\,d^3z}
+{|X_a-X_b+Q_a y-Q_b z|}.
+\label{eq:UabExact}
+\end{equation}
+
+The exact Lagrangian is
+\begin{equation}
+L
+=
+T_{\mathrm{orb}} + T_{\mathrm{int+spin}}
+-\sum_a \bigl(U_a^{\mathrm{self}}+U_a^{\mathrm{mat}}\bigr)
+-\sum_{a<b}U_{ab}.
+\label{eq:Lexact}
+\end{equation}
+
+This exact moving-boundary model is conceptually useful, but it is not
+practical as a general-purpose tide integrator. The moving-domain Laplace
+problem, the nonlinear volume constraints, and the double volume integrals
+make it far more expensive than desired. The rest of the paper develops a
+feasible approximation that keeps the same orbit--spin--shape structure.
+
+\section{Feasible Full Modal Model}
+
+\subsection{STF mode variables}
+
+For actual computation, it is more convenient to replace the spherical
+harmonic amplitudes by body-frame symmetric trace-free (STF) tensors.
+For each degree $\ell\ge2$, let
+\begin{equation}
+A_a^{\langle L\rangle}(t)
+\end{equation}
+be a body-frame STF tensor of rank $\ell$. This is equivalent to the set of
+coefficients $\{q_{a\ell m}\}_{m=-\ell}^{\ell}$.
+
+The corresponding mass multipole is written as
+\begin{equation}
+M_a^{\langle L\rangle}
+=
+\kappa_{a\ell} A_a^{\langle L\rangle}.
+\label{eq:mass-multipole}
+\end{equation}
+
+For later use, recall that for any rank-2 tensor $B$ its symmetric
+trace-free part is
+\begin{equation}
+\mathrm{STF}(B)
+=
+\frac{1}{2}(B+B^\top)
+-
+\frac{1}{3}(\mathrm{tr}\,B)I_3.
+\label{eq:STFdef}
+\end{equation}
+In particular,
+\begin{equation}
+\mathrm{STF}(\Omega_a\Omega_a^\top)
+=
+\Omega_a\Omega_a^\top
+-
+\frac{1}{3}|\Omega_a|^2 I_3.
+\label{eq:STFOmega}
+\end{equation}
+
+\subsection{Corotational derivative}
+
+Because the modes are stored in the rotating body frame, the natural time
+derivative is the corotational derivative
+\begin{equation}
+(D_t A)_{i_1\dots i_\ell}
+=
+\dot A_{i_1\dots i_\ell}
++
+\sum_{k=1}^{\ell}
+\epsilon_{i_k p q}\,
+\Omega_{a,p}\,
+A_{i_1\dots q \dots i_\ell}.
+\label{eq:DtA}
+\end{equation}
+
+Its second derivative is
+\begin{equation}
+D_t^2 A = D_t(D_t A).
+\label{eq:Dt2A}
+\end{equation}
+
+This is the correct body-frame transport law for a tensorial tidal mode.
+
+\subsection{External tidal moments}
+
+Let $\Phi_{\mathrm{ext},a}$ be the potential generated by all bodies other
+than $a$. The inertial STF tidal moments at $X_a$ are
+\begin{equation}
+E_{a,\mathrm{in}}^{\langle L\rangle}
+=
+\left[
+\nabla^{\langle L\rangle}
+\Phi_{\mathrm{ext},a}(x)
+\right]_{x=X_a}.
+\label{eq:E-in-full}
+\end{equation}
+
+The body-frame moments are
+\begin{equation}
+E_{a,\mathrm{body}}^{\langle L\rangle}
+=
+Q_a^{\top}\cdots Q_a^{\top}
+E_{a,\mathrm{in}}^{\langle L\rangle}.
+\label{eq:E-body-full}
+\end{equation}
+
+\subsection{Shape-dependent spin inertia}
+
+A key improvement over the simplest tide models is that the spin inertia is
+allowed to depend on the deformation. Denote the body-frame spin inertia by
+\begin{equation}
+J_a = J_a[A].
+\label{eq:J-of-A}
+\end{equation}
+
+For small deformations, this may be expanded linearly in the retained modes.
+In particular, in the quadrupole sector one will use
+\begin{equation}
+J_a(S_a)
+=
+J_{a0} I_3 - c_{J,a} S_a + O(S_a^2).
+\label{eq:Jlinear}
+\end{equation}
+
+This correction is important for leading-order consistency between tidal
+torques and spin dynamics. In the reduced quadrupole closure developed below,
+the same shape dependence is also used to represent the retained
+rotational-flattening response, rather than introducing a second independent
+conservative storage term at the same order.
+
+\subsection{Generalized rheology}
+
+A single linear damping term corresponds essentially to a constant
+time-lag response. To allow more flexible frequency dependence while keeping
+the system in ODE form, introduce memory variables
+\begin{equation}
+Z_{a\ell n}^{\langle L\rangle}(t),
+\qquad
+n=1,\dots,N_{\mathrm{r},a\ell},
+\label{eq:Zdef}
+\end{equation}
+where $n$ indexes relaxation branches.
+
+Each branch has stiffness $c_{a\ell n}\ge0$ and relaxation time
+$\tau_{a\ell n}>0$.
+
+\subsection{Reduced full-model Lagrangian}
+
+A convenient all-mode reduced Lagrangian is
+\begin{align}
+L
+=&
+\sum_a
+\Bigg[
+\frac{1}{2} M_a |\dot X_a|^2
++
+\frac{1}{2}\Omega_a^\top J_a[A]\Omega_a
+\nonumber\\
+&\qquad
++
+\sum_{\ell\ge2}
+\frac{\mu_{a\ell}}{2}
+\bigl\|D_t A_a^{\langle L\rangle}\bigr\|^2
+-
+\sum_{\ell\ge2}
+\frac{\mu_{a\ell}\omega_{a\ell}^2}{2}
+\bigl\|A_a^{\langle L\rangle}\bigr\|^2
+\Bigg]\nonumber\\
+&-U(X,Q,A),
+\label{eq:Lreduced}
+\end{align}
+where $\mu_{a\ell}$ is a modal inertia and $\omega_{a\ell}$ is the reference
+mode frequency.
+
+The interaction energy is approximated by
+\begin{equation}
+U
+=
+-\sum_{a<b}
+\frac{G M_a M_b}{|X_a-X_b|}
++
+U_{\mathrm{tide}}
++
+U_{\mathrm{rot}},
+\label{eq:Ureduced}
+\end{equation}
+with
+\begin{equation}
+U_{\mathrm{tide}}
+=
+-\sum_a \sum_{\ell\ge2}
+\frac{1}{\ell!}
+M_{a,\mathrm{in}}^{\langle L\rangle}
+E_{a,\mathrm{in}}^{\langle L\rangle},
+\label{eq:Utide}
+\end{equation}
+and
+\begin{equation}
+U_{\mathrm{rot}}
+=
+\sum_a \beta_{a2}\,
+A_a^{\langle ij\rangle}
+\mathrm{STF}\!\left(\Omega_{ai}\Omega_{aj}\right),
+\label{eq:UrotReduced}
+\end{equation}
+where only the $\ell=2$ sector contributes. At the full modal level this term
+is the conservative rotational coupling whose gradient with respect to the
+quadrupole mode produces the centrifugal forcing retained in the shape
+equation.
+
+\subsection{All-mode evolution equations}
+
+The reduced full-model equations are
+\begin{equation}
+M_a \ddot X_a = -\nabla_{X_a}U,
+\label{eq:Xfull}
+\end{equation}
+\begin{equation}
+\dot Q_a = Q_a \widehat{\Omega}_a,
+\label{eq:Qfull}
+\end{equation}
+and
+\begin{equation}
+\dot \Pi_a + \Omega_a \times \Pi_a = \tau_a,
+\qquad
+\Pi_a = \frac{\partial L}{\partial \Omega_a},
+\label{eq:spinfull}
+\end{equation}
+where $\Pi_a$ is the total body-frame angular momentum retained by the model.
+
+For the shape modes, use
+\begin{align}
+\mu_{a\ell} D_t^2 A_a^{\langle L\rangle}
+&+
+\mu_{a\ell}\omega_{a\ell}^2 A_a^{\langle L\rangle}
++
+\sum_{n=1}^{N_{\mathrm{r},a\ell}}
+c_{a\ell n}
+\bigl(
+A_a^{\langle L\rangle}
+-
+Z_{a\ell n}^{\langle L\rangle}
+\bigr)
+\nonumber\\
+&=
+-\kappa_{a\ell}
+E_{a,\mathrm{body}}^{\langle L\rangle}
+-
+\delta_{\ell 2}\,
+\beta_{a2}\,
+\mathrm{STF}
+\bigl(
+\Omega_a\Omega_a^\top
+\bigr)^{\langle L\rangle}.
+\label{eq:Aeq}
+\end{align}
+
+The relaxation branches satisfy
+\begin{equation}
+\tau_{a\ell n}\,
+D_t Z_{a\ell n}^{\langle L\rangle}
+=
+A_a^{\langle L\rangle}
+-
+Z_{a\ell n}^{\langle L\rangle}.
+\label{eq:Zeq}
+\end{equation}
+
+Equation \eqref{eq:Aeq} contains three distinct sources of deformation:
+the body's own restoring tendency, the external tide, and the centrifugal
+flattening term in the $\ell=2$ sector. In the rank-2 case, the rotational
+forcing is exactly the STF tensor defined in \eqref{eq:STFOmega}, which
+removes the isotropic part and retains only the pure quadrupolar flattening.
+In the full modal model this rotational term may be viewed as arising from the
+conservative coupling $U_{\mathrm{rot}}$. In the reduced quadrupole closure used
+later, the same effect is folded into the shape-dependent inertia coefficient
+so that the reduced spin equation and the reduced energy remain consistent.
+
+\subsection{Comments on angular momentum}
+
+The reduced model is most consistent when the spin equation is derived from
+the same Lagrangian that defines the mode kinetic energy. In that case
+$\Pi_a$ includes not only the rigid-spin part $J_a[A]\Omega_a$, but also the
+angular momentum carried by the corotational mode kinetic terms. For a
+strictly leading-order quadrupole implementation, one may keep only the
+dominant shape dependence of the rigid-spin inertia and neglect higher-order
+modal contributions to $\Pi_a$. This is the approximation most often taken
+in practice. The resulting quadrupole closure therefore preserves the leading
+spin--shape coupling while sacrificing exact global angular-momentum
+conservation at higher order, because the angular momentum stored in the
+deformation itself is not evolved explicitly.
+
+\section{Physical Interpretation of the Full Modal Model}
+
+The full modal model contains the main qualitative tidal effects.
+
+\subsection{Tidal bulges}
+
+In the slow-forcing limit, the modes approach a quasi-static response
+proportional to the external tidal field:
+\begin{equation}
+A_a^{\langle L\rangle}
+\approx
+-\frac{\kappa_{a\ell}}
+{\mu_{a\ell}\omega_{a\ell}^2}
+E_{a,\mathrm{body}}^{\langle L\rangle},
+\label{eq:Astatic}
+\end{equation}
+up to corrections from rheology and rotation. This is the tidal bulge.
+
+\subsection{Rotational flattening}
+
+Even without an external perturber, the reduced energy contains the
+spin--shape coupling
+\begin{equation}
+U_{\mathrm{rot},a}
+=
+\beta_{a2}\,A_a^{\langle ij\rangle}
+\mathrm{STF}\!\left(\Omega_{ai}\Omega_{aj}\right),
+\end{equation}
+whose gradient generates the term
+\begin{equation}
+-\delta_{\ell2}\,\beta_{a2}\,
+\mathrm{STF}
+\bigl(
+\Omega_a\Omega_a^\top
+\bigr)
+\end{equation}
+in \eqref{eq:Aeq}. Thus an isolated rapidly rotating body does not relax to a
+perfect sphere; instead it approaches the rotationally flattened equilibrium
+selected by this conservative coupling, modified by any dissipation present.
+
+\subsection{Lag, synchronization, and circularization}
+
+The relaxation branches cause the deformation to lag behind the forcing. The
+lagged bulge exerts a torque on the spin and modifies the force on the orbit.
+As a result, the model supports:
+\begin{itemize}
+\item spin synchronization or pseudo-synchronization,
+\item obliquity damping,
+\item orbital circularization,
+\item exchange of angular momentum between orbit, spin, and tides.
+\end{itemize}
+
+\section{Quadrupole Reduction}
+
+The most useful implementation model keeps only the $\ell=2$ sector.
+
+\subsection{Quadrupole shape tensor}
+
+Represent the body-frame quadrupole deformation by a symmetric trace-free
+matrix
+\begin{equation}
+S_a(t)\in\mathbb{R}^{3\times 3},
+\qquad
+S_a = S_a^\top,
+\qquad
+\mathrm{tr}\,S_a = 0.
+\label{eq:S}
+\end{equation}
+
+The perturbed surface is
+\begin{equation}
+r = R_a \bigl(1+\hat n^\top S_a \hat n\bigr).
+\label{eq:surfaceS}
+\end{equation}
+
+\subsection{Quadrupole moment and inertia}
+
+The inertial mass quadrupole is
+\begin{equation}
+I_a
+=
+c_{Q,a}\,Q_a S_a Q_a^\top.
+\label{eq:Idef}
+\end{equation}
+For the normalization used in many reduced models,
+\begin{equation}
+c_{Q,a}=\frac{2}{5}M_aR_a^2.
+\label{eq:cQ}
+\end{equation}
+
+The body-frame spin inertia is taken as
+\begin{equation}
+J_a(S_a)
+=
+J_{a0} I_3 - \tilde c_{J,a} S_a,
+\label{eq:JS}
+\end{equation}
+where $J_{a0}$ is the spherical reference inertia and $\tilde c_{J,a}$ is the
+effective reduced spin--shape coefficient. If one starts from a split into a
+direct inertia-response coefficient $c_{J,a}$ and a separate conservative
+rotational-flattening coefficient $\alpha_a$, then the reduced quadrupole
+closure requires the combination
+\begin{equation}
+\tilde c_{J,a}=c_{J,a}+2\alpha_a.
+\label{eq:cJeff}
+\end{equation}
+For a homogeneous reference body,
+\begin{equation}
+J_{a0}=\frac{2}{5}M_aR_a^2.
+\label{eq:J0}
+\end{equation}
+
+Equation \eqref{eq:JS} is a linearized leading-order correction. Because
+$S_a$ is trace-free, this closure keeps $\mathrm{tr}\,J_a=3J_{a0}$ fixed. That
+should be understood as a small-deformation linearization: $O(S_a^2)$
+corrections would in general modify the trace, so \eqref{eq:JS} is not exact
+for large deformation. Within the reduced quadrupole closure, however,
+\eqref{eq:JS} is the correct place to retain the leading rotational-flattening
+feedback, because the same coefficient must appear both in the spin kinetic
+energy and in the rotational forcing of the shape equation.
+
+\subsection{External tidal tensor}
+
+Let
+\begin{equation}
+D_{ab}=X_b-X_a,
+\quad
+d_{ab}=|D_{ab}|,
+\quad
+\hat D_{ab}=D_{ab}/d_{ab}.
+\label{eq:Dab}
+\end{equation}
+
+The inertial quadrupolar tidal tensor produced by the other bodies is
+\begin{equation}
+E_{a,\mathrm{in}}
+=
+\sum_{b\neq a}
+\frac{G M_b}{d_{ab}^3}
+\left(
+I_3 - 3\hat D_{ab}\hat D_{ab}^\top
+\right).
+\label{eq:Ein}
+\end{equation}
+
+The body-frame tidal tensor is
+\begin{equation}
+E_{a,\mathrm{body}}
+=
+Q_a^\top E_{a,\mathrm{in}} Q_a.
+\label{eq:Ebody}
+\end{equation}
+
+Because the quadrupole interaction energy is
+\begin{equation}
+U_{\mathrm{tide},a}^{(2)}
+=
+-\frac{1}{2} I_a : E_{a,\mathrm{in}}
+=
+-\frac{c_{Q,a}}{2} S_a : E_{a,\mathrm{body}},
+\label{eq:Utidequad}
+\end{equation}
+the reciprocal tidal forcing that appears in the shape equation is
+\begin{equation}
+\lambda_a E_{a,\mathrm{body}},
+\qquad
+\lambda_a \equiv \frac{c_{Q,a}}{2}.
+\label{eq:lambdaQ}
+\end{equation}
+This coefficient is required for consistency between the quadrupole force,
+torque, interaction energy, and the internal mode dynamics.
+
+
+In the reduced quadrupole closure adopted here, rotational flattening is not
+kept as a separate stored term $U_{\mathrm{rot},a}^{(2)}$. Instead it is absorbed
+into the same linearized inertia coefficient that appears in \eqref{eq:JS}.
+Because $S_a$ is symmetric and trace-free,
+\begin{equation}
+\frac{1}{2}\Omega_a^\top J_a(S_a)\Omega_a
+=
+\frac{1}{2}J_{a0}|\Omega_a|^2
+-
+\frac{1}{2}\tilde c_{J,a}
+S_a:
+\mathrm{STF}\!\bigl(\Omega_a\Omega_a^\top\bigr),
+\label{eq:Tspinquadsplit}
+\end{equation}
+so the rotational contribution implied by the reduced spin kinetic energy is
+\begin{equation}
+-\frac{1}{2}\tilde c_{J,a}\,
+\mathrm{STF}
+\bigl(
+\Omega_a\Omega_a^\top
+\bigr).
+\label{eq:Urotgrad}
+\end{equation}
+This is the coefficient that must appear in the reduced quadrupole shape
+equation. Adding a second independent term
+$\alpha_a S_a:\mathrm{STF}(\Omega_a\Omega_a^\top)$ to the reduced mechanical
+energy would double count the same conservative coupling unless one also kept
+the corresponding extra contribution to the reduced spin momentum.
+
+\subsection{Corotational derivative}
+
+For any body-frame rank-2 tensor, define
+\begin{equation}
+D_t S_a
+=
+\dot S_a + [\widehat{\Omega}_a,S_a],
+\label{eq:DtS}
+\end{equation}
+where
+\begin{equation}
+[A,B]=AB-BA.
+\end{equation}
+Then
+\begin{equation}
+D_t^2 S_a = D_t(D_t S_a).
+\label{eq:Dt2S}
+\end{equation}
+
+It is convenient to introduce the auxiliary variable
+\begin{equation}
+W_a = D_t S_a.
+\label{eq:Wdef}
+\end{equation}
+
+\subsection{Quadrupole shape equation with rheology}
+
+The quadrupole shape equation is
+\begin{align}
+D_t^2 S_a
+&+
+2\gamma_a D_t S_a
++
+\omega_{a2}^2 S_a
++
+\sum_{n=1}^{N_{\mathrm{r},a}}
+c_{an}
+\bigl(S_a-Z_{an}\bigr)
+\nonumber\\
+&=
+- \lambda_a E_{a,\mathrm{body}}
+-
+\frac{1}{2}\tilde c_{J,a}
+\,\mathrm{STF}
+\bigl(
+\Omega_a\Omega_a^\top
+\bigr).
+\label{eq:Seq}
+\end{align}
+
+Each relaxation branch obeys
+\begin{equation}
+\tau_{an}\,D_t Z_{an} = S_a - Z_{an}.
+\label{eq:Zquad}
+\end{equation}
+
+The coefficient $\gamma_a$ represents direct viscous-like damping of the
+quadrupole rate, while the branch terms represent delayed internal response.
+A single branch is often enough for a useful toy model; several branches can
+approximate a broader frequency-dependent rheology.
+
+\subsection{Spin equation}
+
+In the particular leading-order quadrupole closure used by the reference
+implementation, the body-frame spin equation is
+\begin{equation}
+\frac{d}{dt}\bigl(J_a(S_a)\Omega_a\bigr)
++
+\Omega_a\times
+\bigl(J_a(S_a)\Omega_a\bigr)
+=
+0.
+\label{eq:spinquad}
+\end{equation}
+
+Expanding the time derivative gives
+\begin{equation}
+J_a(S_a)\dot\Omega_a
+=
+-
+\dot J_a(S_a)\Omega_a
+-
+\Omega_a\times
+\bigl(J_a(S_a)\Omega_a\bigr).
+\label{eq:spinexpanded}
+\end{equation}
+Since $W_a=D_tS_a$, one also has
+\begin{equation}
+\dot S_a = W_a-[\widehat{\Omega}_a,S_a],
+\label{eq:SdotFromW}
+\end{equation}
+so that in the linearized closure
+\begin{equation}
+\dot J_a(S_a)=-\tilde c_{J,a}\dot S_a.
+\label{eq:JdotS}
+\end{equation}
+This is the simplest leading-order correction that accounts for the fact that
+the tidal bulge changes the moment of inertia. In the present reduced model,
+it is paired with the deliberate omission of the deformation's own angular
+momentum from $\Pi_a$, as discussed above.
+
+The same truncated quadrupole potential still defines a formal torque, but in
+this reduced closure that torque is not inserted as a second independent term
+on the right-hand side of \eqref{eq:spinquad}. The orientational dependence of
+the interaction is already represented through the body-frame transport term in
+\eqref{eq:SdotFromW}; adding the explicit torque again would double count the
+same conservative $Q_a$--$S_a$ coupling and produces a secular drift in the
+``mechanical plus dissipated'' energy diagnostic of the implementation.
+
+\subsection{Diagnostic quadrupole torque}
+
+The inertial quadrupole torque associated with the same truncated interaction
+energy is
+\begin{equation}
+N_{a,\mathrm{in}}
+=
+3\sum_{b\neq a}
+\frac{G M_b}{d_{ab}^3}
+\bigl(I_a\hat D_{ab}\bigr)\times \hat D_{ab}.
+\label{eq:Nin}
+\end{equation}
+
+The body-frame version is
+\begin{equation}
+N_{a,\mathrm{body}}
+=
+Q_a^\top N_{a,\mathrm{in}}.
+\label{eq:Nbody}
+\end{equation}
+In the implementation described here, \eqref{eq:Nin}--\eqref{eq:Nbody} are
+useful diagnostics of the orientational tendency of the bulge, but they are
+not added as a separate forcing term in \eqref{eq:spinquad}.
+
+\subsection{Orbital dynamics}
+
+The pair interaction energy truncated at monopole plus quadrupole order is
+\begin{align}
+U_{ab}
+&=
+-\frac{G M_a M_b}{d_{ab}}
+\nonumber\\
+&\quad
+-\frac{3G}{2d_{ab}^3}
+\Bigl(
+M_b\,\hat D_{ab}^\top I_a \hat D_{ab}
++
+M_a\,\hat D_{ab}^\top I_b \hat D_{ab}
+\Bigr).
+\label{eq:Uab}
+\end{align}
+
+This retains the monopole and monopole--quadrupole couplings, but neglects
+quadrupole--quadrupole interactions of order $O(d_{ab}^{-5})$ and all higher
+multipolar contributions.
+
+The orbital equation is
+\begin{equation}
+M_a \ddot X_a
+=
+-\nabla_{X_a}\sum_{b<c} U_{bc}.
+\label{eq:Xquad}
+\end{equation}
+
+Equations
+\eqref{eq:Qdot},
+\eqref{eq:Seq},
+\eqref{eq:Zquad},
+\eqref{eq:spinquad}, and
+\eqref{eq:Xquad}
+form a closed quadrupole tide model.
+
+\subsection{First-order implementation form}
+
+Using the auxiliary variable $W_a=D_t S_a$, the quadrupole subsystem may be
+written in first-order form as
+\begin{equation}
+D_t S_a = W_a,
+\label{eq:firstS}
+\end{equation}
+\begin{align}
+D_t W_a
+&=
+-2\gamma_a W_a
+-\omega_{a2}^2 S_a
+-\sum_{n=1}^{N_{\mathrm{r},a}}
+c_{an}(S_a-Z_{an})
+\nonumber\\
+&\quad
+-\lambda_a E_{a,\mathrm{body}}
+-\frac{1}{2}\tilde c_{J,a}\,
+\mathrm{STF}
+\bigl(
+\Omega_a\Omega_a^\top
+\bigr),
+\label{eq:firstW}
+\end{align}
+together with \eqref{eq:Zquad}. This form is convenient for standard ODE
+solvers. In particular, if one implements the inertial quadrupole as
+$I_a=c_{Q,a}Q_aS_aQ_a^\top$ in the orbital force and pair potential,
+then the same model must use the reciprocal coefficient
+$\lambda_a=c_{Q,a}/2$ in \eqref{eq:Seq} and \eqref{eq:firstW}; otherwise the
+bookkeeping of conservative energy is inconsistent. The associated torque
+formula \eqref{eq:Nin} should be treated as diagnostic in this leading-order
+closure rather than inserted as an additional right-hand-side term in the spin
+ODE, because the corotational coupling already represented by
+\eqref{eq:SdotFromW} accounts for the same conservative orientational
+interaction. Likewise, the same coefficient $\tilde c_{J,a}$ must appear both
+in the inertia tensor \eqref{eq:JS} and in the rotational forcing term of
+\eqref{eq:Seq} and \eqref{eq:firstW}. In that reduced closure the coupling is
+already stored in
+$\frac{1}{2}\Omega_a^\top J_a(S_a)\Omega_a$, so adding an extra
+spin--shape energy term would double count it and produce a secular drift in
+``mechanical plus dissipated'' energy plots.
+
+\subsection{Conservative quadrupole energy}
+
+In the nondissipative limit $\gamma_a=0$ and with all relaxation branches
+removed, the natural mechanical energy of the quadrupole closure is
+\begin{align}
+E_{\mathrm{mech}}
+=
+&\sum_a \Biggl[
+\frac{1}{2}M_a|\dot X_a|^2
++\frac{1}{2}\Omega_a^\top J_a(S_a)\Omega_a \nonumber\\
+&\qquad\quad+\frac{1}{2}\|W_a\|^2
++\frac{1}{2}\omega_{a2}^2\|S_a\|^2
+\Biggr]
+\nonumber\\
+&
++\sum_{a<b} U_{ab},
+\label{eq:Emechquad}
+\end{align}
+up to the same truncation order used elsewhere in the reduced model and with
+any chosen normalization of the STF norm. The rotational-flattening coupling
+is already contained in $\frac{1}{2}\Omega_a^\top J_a(S_a)\Omega_a$ through the
+shape dependence of $J_a(S_a)$. Therefore the reduced conservative diagnostic
+must not add a second term proportional to
+$S_a:\mathrm{STF}(\Omega_a\Omega_a^\top)$ unless the reduced spin equation is
+simultaneously upgraded to evolve the corresponding extra contribution to the
+body-frame angular momentum.
+
+\section{What the Quadrupole Model Captures}
+
+The quadrupole model is the smallest version that still contains the main
+tidal phenomena.
+
+\subsection{Tidal bulge}
+
+In the slow-forcing limit,
+\begin{equation}
+S_a
+\approx
+-\omega_{a2}^{-2}
+\left[
+\lambda_a E_{a,\mathrm{body}}
++
+\frac{1}{2}\tilde c_{J,a}\,
+\mathrm{STF}
+\bigl(
+\Omega_a\Omega_a^\top
+\bigr)
+\right]
+\end{equation}
+up to rheological corrections. The first term is the ordinary tidal bulge,
+and the second is rotational oblateness.
+
+\subsection{Lagged bulge}
+
+The presence of $\gamma_a$ and the relaxation branches $Z_{an}$ implies that
+the quadrupole is not exactly aligned with the instantaneous forcing. The
+resulting misalignment drives secular exchange between orbit and spin. In the
+present closure the diagnostic torque \eqref{eq:Nin} is generally nonzero,
+while the spin responds through the coupled $S_a$-dependence of $J_a(S_a)$ and
+the corotational transport terms.
+
+\subsection{Spin locking and obliquity damping}
+
+If the body-frame forcing changes in time, then the bulge is driven around in
+the rotating frame. In the present leading-order closure, synchronization and
+obliquity damping arise from the coupled shape dynamics and the
+$S_a$-dependence of the spin inertia, while \eqref{eq:Nin} remains a
+diagnostic measure of the corresponding orientational tendency rather than a
+second explicit right-hand-side term.
+
+\subsection{Circularization}
+
+Because the quadrupole is repeatedly driven and dissipated on an eccentric
+orbit, orbital energy is removed while angular momentum is redistributed
+between orbit and spin. This yields eccentricity damping and relaxation
+toward more circular states.
+
+\section{Relation to Real Problems}
+
+\subsection{What is physically meaningful}
+
+Despite its simplicity, the model retains several genuinely important
+features:
+\begin{itemize}
+\item full three-dimensional orbital motion,
+\item explicit tidal multipoles,
+\item backreaction of those multipoles on the gravitational field,
+\item spin--orbit coupling,
+\item rotational flattening,
+\item deformation-dependent spin inertia,
+\item dissipative lag with adjustable frequency dependence.
+\end{itemize}
+
+These features are sufficient to reproduce the leading qualitative structure
+of tidal evolution.
+
+\subsection{What remains toy-like}
+
+The model is still a reduced model, and this should be stated clearly.
+
+\begin{itemize}
+\item \textbf{No full hydrodynamics.}
+The interior is not evolved by compressible Navier--Stokes or by a detailed
+anelastic or viscoelastic continuum model.
+
+\item \textbf{No internal stratification.}
+Real planets may contain cores, mantles, oceans, atmospheres, layered
+viscosities, and phase transitions. These are not represented explicitly.
+
+\item \textbf{Effective rather than microscopic rheology.}
+The coefficients $\gamma_a$, $c_{an}$, and $\tau_{an}$ are reduced
+parameters. They represent an effective linear response, not a detailed
+microphysical material law.
+
+\item \textbf{No exact higher-order angular-momentum closure.}
+The leading quadrupole implementation keeps the deformation dependence of the
+spin inertia, but does not explicitly evolve the angular momentum carried by
+the internal deformation. Exact global angular-momentum conservation is
+therefore not enforced beyond the retained leading order.
+
+\item \textbf{Small-deformation regime.}
+The quadrupole model, and the linearized inertia
+\eqref{eq:JS}, are intended for weak to moderate deformations. Very strong
+tides would require higher modes and nonlinear corrections.
+
+\item \textbf{No thermal evolution.}
+Mechanical dissipation is included, but heating, melting, convection, and
+feedback on material parameters are not.
+
+\item \textbf{No permanent triaxial figure unless added.}
+The model describes fluid-like tidal and rotational bulges. A frozen-in
+quadrupole can be added, but is not present by default.
+\end{itemize}
+
+\subsection{Comparison with common tide models}
+
+A single damping term proportional to $D_t S_a$ resembles a constant
+time-lag description. By contrast, the branch variables $Z_{an}$ allow a
+frequency-dependent lag more like a generalized Maxwell or anelastic
+response. This is still a reduced rheology, but it is more flexible and more
+realistic than a single constant-lag parameter.
+
+\subsection{Relation to Love number and quality factor}
+
+Planetary tidal dissipation is often parameterized by the quadrupolar Love
+number $k_2$ and the quality factor $Q$. In the present reduced model, the
+more fundamental objects are the linear response coefficients appearing in
+\eqref{eq:Seq}. For a harmonic forcing at angular frequency $\sigma$ in the
+body frame, one may write the complex quadrupole response schematically as
+\begin{equation}
+\widetilde S_a(\sigma)
+=
+-\chi_a(\sigma)
+\widetilde F_a(\sigma),
+\label{eq:chiDef}
+\end{equation}
+where $\widetilde F_a$ denotes the STF forcing from the tidal tensor and the
+rotational term, and where
+\begin{equation}
+\chi_a(\sigma)
+=
+\Biggl[
+-\sigma^2
++2i\gamma_a\sigma
++\omega_{a2}^2
++\sum_{n=1}^{N_{\mathrm{r},a}}
+c_{an}
+\left(
+1-\frac{1}{1+i\sigma\tau_{an}}
+\right)
+\Biggr]^{-1}
+\label{eq:chiModel}
+\end{equation}
+in the linearized frequency-domain approximation. The static compliance
+$\chi_a(0)$ sets the scale of the equilibrium quadrupole and therefore of an
+effective static $k_2$, while the ratio of imaginary to real parts of
+$\chi_a(\sigma)$ determines the phase lag and hence an effective
+$Q^{-1}(\sigma)$.
+
+Thus the present parameters $(\gamma_a,\omega_{a2},c_{an},\tau_{an})$ should
+be viewed as a way to fit or calibrate the complex quadrupolar response of a
+body over the frequency range of interest, rather than as a unique microscopic
+material model. With one branch the model resembles a simple constant-lag-like
+response over a limited band, whereas several branches can be chosen to better
+match a desired frequency-dependent $k_2(\sigma)$ and $Q(\sigma)$.
+
+\section{Computational Structure}
+
+The upgraded quadrupole model remains inexpensive compared with full
+hydrodynamics.
+
+For $N$ bodies, the dominant cost of each right-hand-side evaluation remains
+the pairwise gravitational and tidal interaction, which scales as
+\begin{equation}
+O(N^2).
+\end{equation}
+
+The additional costs from the refinements are lower order:
+\begin{itemize}
+\item building and inverting the $3\times3$ inertia tensor $J_a(S_a)$ is
+$O(N)$,
+\item the rotational-flattening term is $O(N)$,
+\item $N_{\mathrm{r},a}$ rheology branches add $O(NN_{\mathrm{r}})$ state
+variables and arithmetic.
+\end{itemize}
+
+Thus the qualitative complexity does not change. The main effect is a modest
+increase in state size and per-body algebra.
+
+\section{Implementation Remarks}
+
+For numerical work, the quadrupole model is the recommended starting point.
+A practical state vector for body $a$ is
+\begin{equation}
+\bigl(
+X_a,\dot X_a,q_a,\Omega_a,S_a,W_a,Z_{a1},\dots,Z_{aN_{\mathrm{r},a}}
+\bigr),
+\end{equation}
+where $q_a$ is a unit quaternion representing the orientation.
+
+Several implementation details are important:
+\begin{itemize}
+\item The orientation should be advanced with quaternions or a Lie-group
+integrator, then renormalized as needed.
+\item The matrices $S_a$, $W_a$, and $Z_{an}$ should be projected back to
+their symmetric trace-free parts to suppress numerical drift.
+\item In the conservative limit, the orbital force, pair potential, and any
+diagnostic torque should be derived from the same truncated potential. In the
+leading-order quadrupole closure used here, the torque is monitored
+diagnostically rather than inserted as an additional spin forcing term.
+\item The shape-dependent inertia $J_a(S_a)$ should remain positive definite.
+Since $J_a(S_a)=J_{a0}I_3-\tilde c_{J,a}S_a$, this requires
+$J_{a0}-\tilde c_{J,a}\lambda_i(S_a)>0$ for every eigenvalue $\lambda_i(S_a)$.
+Equivalently, the deformation amplitude must remain small enough that no
+eigenvalue of $\tilde c_{J,a}S_a$ reaches $J_{a0}$; approaching that regime signals
+breakdown of the linearized weak-deformation model.
+\end{itemize}
+
+
+\subsection{Comments on a practical matrix implementation}
+
+A straightforward numerical realization stores each STF quadrupole variable
+$S_a$, $W_a$, and $Z_{an}$ as a full $3\times 3$ matrix rather than in a
+minimal five-component basis. This is slightly redundant, but it keeps the
+ODEs close to their analytical form: the corotational terms remain simple
+commutators, and the rotational forcing is just
+$\mathrm{STF}(\Omega_a\Omega_a^\top)$. Numerical drift can then be controlled
+by re-projecting these matrices onto their symmetric trace-free parts after
+right-hand-side evaluations or at output times.
+
+The orientation may be represented by unit quaternions $q_a$ mapping
+body-frame vectors into inertial-frame vectors. For moderate $N$, the orbital
+force, body-frame tidal tensor, and diagnostic quadrupole torque can all be
+assembled by vectorized pairwise operations, preserving the $O(N^2)$ cost of
+the reduced model. For the particular leading-order closure used here, it is
+also convenient in the spin update to solve the $3\times 3$ linear system
+\begin{equation}
+J_a(S_a)\dot\Omega_a
+=
+-
+\dot J_a(S_a)\Omega_a
+-
+\Omega_a\times\bigl(J_a(S_a)\Omega_a\bigr)
+\end{equation}
+directly, rather than forming $J_a(S_a)^{-1}$ explicitly.
+
+For generalized rheology, initializing each branch near $Z_{an}=S_a$ avoids an
+artificial start-up transient. The present implementation also follows the
+leading-order closure adopted in this paper: it keeps the deformation
+dependence of $J_a(S_a)$ but omits the separate angular momentum carried by the
+deformation itself. Consequently, the conservative diagnostic should be
+constructed from the same truncated reduced energy used by the ODEs, with the
+same coefficient $\tilde c_{J,a}$ appearing in both $J_a(S_a)$ and the
+rotational forcing term. No additional
+$S_a:\mathrm{STF}(\Omega_a\Omega_a^\top)$ storage term should be added on top of
+$\frac{1}{2}\Omega_a^\top J_a(S_a)\Omega_a$ in this reduced closure. After that
+correction, remaining small drift in practical integrations is primarily
+numerical and reflects the use of finite tolerances, post-processed
+dissipation integrals, and the leading-order angular-momentum closure rather
+than an omitted conservative energy reservoir. In production runs one should
+also monitor the smallest
+eigenvalue of $J_a(S_a)$ and reject parameter choices or time steps that drive
+the inertia tensor close to singularity.
+
+
+
+\section{Illustrative Double-Planet Evolution}
+
+To illustrate the behavior of the quadrupole model, Fig.~\ref{fig:double-planet-tidal}
+shows a representative integration for a close double-planet system. The figure
+is not intended as a parameter survey, but as a compact diagnostic of how the
+reduced model moves energy and angular momentum between orbit, spin, and tidal
+shape variables during long-term evolution.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{Double planet tidal.jpg}
+\caption{Example diagnostics for tidal evolution in a close double-planet
+system evolved with the quadrupole model. The four panels summarize the energy
+budget, the alignment of the spin axes with the orbital normal, the secular
+change of orbital eccentricity and semi-major axis, and the evolution of the
+spin rates relative to the orbital frequency.}
+\label{fig:double-planet-tidal}
+\end{figure*}
+
+The upper-left panel shows the energy bookkeeping. The dashed green curve gives
+the instantaneous mechanical energy of the reduced system, while the black curve
+shows the cumulative dissipated energy. Their sum, plotted in red, remains
+nearly constant throughout the run, indicating that the numerical evolution is
+consistent with the intended dissipative energy balance: mechanical energy is
+steadily removed from the orbit--spin degrees of freedom and transferred into
+heat.
+
+The upper-right panel tracks the projection of each planet's spin axis into the
+orbital plane through $|\hat s-(\hat s\cdot\hat h)\hat h|$, where $\hat h$ is the
+orbital angular-momentum direction. After a brief initial transient, both
+curves remain close to unity, so in this example the spins stay almost entirely
+within the orbital plane rather than aligning with the orbital normal. The plot
+therefore provides a direct diagnostic of obliquity evolution in the chosen
+initial configuration.
+
+The lower-left panel shows the secular orbital evolution. The eccentricity
+(monotonic purple curve) decreases steadily, demonstrating circularization.
+At the same time, the semi-major axis (gray dashed curve, read on the right
+axis) also shrinks, showing that dissipation removes orbital energy and drives
+a slow inspiral. Small superposed oscillations are visible, but the dominant
+trend is a smooth long-term decay of both quantities.
+
+The lower-right panel compares the spin angular frequencies of the two planets
+with the orbital mean motion. Planet~1 starts with a strong transient and then
+relaxes toward a nearly steady super-synchronous rotation, while Planet~2 stays
+at a lower but also nearly steady spin rate. Meanwhile the orbital frequency
+(black dashed curve) increases gradually as the orbit contracts. The panel thus
+illustrates the expected competition between tidal spin evolution and the
+changing orbital timescale.
+
+Taken together, the four diagnostics show that even the reduced quadrupole
+closure reproduces the main qualitative signatures of tidal evolution: a
+mechanically consistent dissipative energy budget, long-term orbital decay,
+circularization, and coupled spin evolution on the same integration.
+
+\section{Conclusion}
+
+A reduced Newtonian model of tidally deformable pseudo-fluid planets has been
+constructed in two layers. The first is a full modal framework with arbitrary
+angular modes, body-frame rotation, deformation-dependent spin inertia, a
+reduced rotational-flattening coupling implemented through the
+shape-dependent spin inertia, and generalized rheology. The second is a quadrupole implementation model
+suitable for direct numerical integration.
+
+Relative to the simplest damped-quadrupole tide model, the present version is
+improved in three important respects: it allows the spin inertia to vary with
+the deformation, it includes rotational flattening through the same reduced
+spin--shape coefficient that enters the spin kinetic energy, and it supports
+frequency-dependent lag through internal relaxation branches. These additions
+preserve the ODE structure of the model while making its tidal evolution more
+physically credible.
+
+The model remains a reduced model and not a full geophysical simulator.
+Nevertheless, it captures the key orbit--spin--shape couplings needed for
+tidal bulges, lag, synchronization, obliquity damping, and orbital
+circularization. It is therefore a useful intermediate framework between
+point-mass celestial mechanics and full interior simulation.
+
+\section*{Acknowledgment}
+The author wishes to acknowledge the use of large language models (Google's Gemini and OpenAI's GPT) for assistance in improving the language and clarity of the manuscript, for aiding in the implementation of the numerical code and derivations of some of the analytical results. The results were tested and verified by the author.
+
+\end{document}
