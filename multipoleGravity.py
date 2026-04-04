@@ -614,17 +614,20 @@ def build_demo_problem(seed: int = 7):
 
     # ---- Shape / tidal-mode initial conditions ----
     # Random initial quadrupole deformation (S0) and quadrupole mode velocity (W0 = D_t S).
-    S0_amplitude = 0.065
-    W0_amplitude = 0.095
+    S0_amplitude = 0  # 0.065
+    W0_amplitude = 0  # 0.095
 
     # ---- Material / damping / rheology parameters ----
     extra_stiffness = np.array([0.52, 0.38], dtype=float)
-    gamma = np.array([0.030, 0.040], dtype=float)
-    # One Maxwell-like relaxation branch per body. Add more columns for richer rheology.
-    relax_strength = np.array([[0.55], [0.42]], dtype=float)
-    relax_time = np.array([[2.8], [2.1]], dtype=float)
-    # Rotational-flattening forcing coefficient in the quadrupole equation.
-    rot_flattening_coeff = np.array([0.22, 0.18], dtype=float)
+    # gamma = np.array([0.030, 0.040], dtype=float)
+    # relax_strength = np.array([[0.55], [0.42]], dtype=float)
+    # relax_time = np.array([[2.8], [2.1]], dtype=float)
+    # rot_flattening_coeff = np.array([0.22, 0.18], dtype=float)
+
+    relax_strength = np.array([[0.05], [0.05]])
+    relax_time = np.array([[15.0], [20.0]])
+    gamma = np.array([0.003, 0.004])
+    rot_flattening_coeff = np.array([0.003, 0.003])
 
     # ---- Construct the osculating two-body orbit from (a, e, f) ----
     total_mass = np.sum(mass)
@@ -859,19 +862,24 @@ def format_stats_report(record: Dict[str, np.ndarray], params: QuadrupoleParamet
 
 def make_diagnostics_plot(record: Dict[str, np.ndarray], params: QuadrupoleParameters, filename: str = "quadrupole_tidal_diagnostics.png"):
     """Create a single matplotlib figure with the requested tidal-evolution diagnostics."""
-    # np.savez_compressed('tidal_cache.npz', record=record, params=params)
+    np.savez_compressed('tidal_cache.npz', record=record, params=params)
 
     diag = two_body_diagnostics(record, params)
     t = diag["t"]
 
     energy_dissipated = record["cumulative_dissipation"]
-    orbit_normal = diag["orbit_normal"]
-    spin_axis = diag["spin_axis"]
-    axis_plane_projection = np.sqrt(np.clip(1.0 - np.einsum("tai,ti->ta", spin_axis, orbit_normal) ** 2, 0.0, 1.0))
     eccentricity = diag["ecc"]
     semi_major_axis = diag["a"]
     spin_rate = diag["spin_rate"]
     mean_motion = diag["mean_motion"]
+
+    # Internal-mode diagnostics requested for burst analysis.
+    W_norm_sq = np.sum(record["W_body"] ** 2, axis=(2, 3))
+    if params.n_relax > 0:
+        delta_SZ = record["S_body"][:, :, None, :, :] - record["Z_body"]
+        SZ_lag_norm_sq = np.sum(delta_SZ ** 2, axis=(2, 3, 4))
+    else:
+        SZ_lag_norm_sq = np.zeros_like(W_norm_sq)
 
     fig, axes = plt.subplots(2, 2, figsize=(12, 8), constrained_layout=True)
 
@@ -902,11 +910,11 @@ def make_diagnostics_plot(record: Dict[str, np.ndarray], params: QuadrupoleParam
 
     ax = axes[0, 1]
     for i, color in enumerate(params.colors[:params.n_bodies]):
-        ax.plot(t, axis_plane_projection[:, i], lw=2.0, color=color, label=f"Planet {i + 1}")
-    ax.set_title("Spin-axis projection into orbital plane")
+        ax.plot(t, W_norm_sq[:, i], lw=2.0, color=color, label=fr"Planet {i + 1} $\|W\|_F^2$")
+        ax.plot(t, SZ_lag_norm_sq[:, i], lw=2.0, color=color, ls="--", label=fr"Planet {i + 1} $\|S-Z\|_F^2$")
+    ax.set_title(r"Internal quadrupole activity: $\|W\|_F^2$ and $\|S-Z\|_F^2$")
     ax.set_xlabel("time")
-    ax.set_ylabel(r"$|\hat s-(\hat s\cdot \hat h)\hat h|$")
-    ax.set_ylim(0.0, 1.05)
+    ax.set_ylabel("squared Frobenius norm")
     ax.grid(True, alpha=0.3)
     ax.legend()
 
@@ -1024,7 +1032,597 @@ def main():
     print(f"Saved matplotlib diagnostics plot to {diagnostics_name}")
 
 
+def run_tests(output_dir="quadrupole_test_outputs", show_plots=True, quick=False):
+    """
+    Run a suite of synthetic validation tests for the quadrupole tidal model.
+
+    Parameters
+    ----------
+    output_dir : str
+        Directory where diagnostic PNG files will be saved.
+    show_plots : bool
+        If False, suppress interactive plt.show() while still saving figures.
+    quick : bool
+        If True, shorten integrations for a faster smoke-test version.
+
+    Returns
+    -------
+    dict
+        Summary dictionary with pass/fail results.
+    """
+    import os
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    def _scaled(t_end, n_samples):
+        if quick:
+            return max(20.0, 0.45 * float(t_end)), max(240, int(0.45 * int(n_samples)))
+        return float(t_end), int(n_samples)
+
+    def _mean_motion(a, total_mass=2.0, G=1.0):
+        return np.sqrt(G * total_mass / a ** 3)
+
+    def _sph(theta_deg, phi_deg=0.0, mag=1.0):
+        th = np.deg2rad(theta_deg)
+        ph = np.deg2rad(phi_deg)
+        return np.array([
+            mag * np.sin(th) * np.cos(ph),
+            mag * np.sin(th) * np.sin(ph),
+            mag * np.cos(th),
+        ], dtype=float)
+
+    def _make_two_body_case(
+        *,
+        G=1.0,
+        mass=(1.0, 1.0),
+        radius=(0.25, 0.25),
+        a=3.0,
+        e=0.0,
+        f=0.0,
+        orbital_rotation=None,
+        spin_vecs=((0.0, 0.0, 0.5), (0.0, 0.0, 0.5)),
+        q=((1.0, 0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0)),
+        S0=None,
+        W0=None,
+        extra_stiffness=(0.3, 0.3),
+        gamma=(0.0, 0.0),
+        relax_strength=None,
+        relax_time=None,
+        rot_flattening_coeff=(0.0, 0.0),
+        colors=("royalblue", "orangered"),
+    ):
+        mass_arr = np.asarray(mass, dtype=float)
+        radius_arr = np.asarray(radius, dtype=float)
+
+        total_mass = float(np.sum(mass_arr))
+        mu = G * total_mass
+        p = a * (1.0 - e * e)
+        r_mag = p / (1.0 + e * np.cos(f))
+
+        r_pf = np.array([r_mag * np.cos(f), r_mag * np.sin(f), 0.0], dtype=float)
+        v_pf = np.sqrt(mu / p) * np.array([-np.sin(f), e + np.cos(f), 0.0], dtype=float)
+
+        if orbital_rotation is None:
+            orbital_rotation = np.eye(3)
+        orbital_rotation = np.asarray(orbital_rotation, dtype=float)
+
+        r_rel = orbital_rotation @ r_pf
+        v_rel = orbital_rotation @ v_pf
+
+        x = np.array([
+            -(mass_arr[1] / total_mass) * r_rel,
+            +(mass_arr[0] / total_mass) * r_rel,
+        ], dtype=float)
+        v = np.array([
+            -(mass_arr[1] / total_mass) * v_rel,
+            +(mass_arr[0] / total_mass) * v_rel,
+        ], dtype=float)
+
+        q_arr = quat_normalize(np.asarray(q, dtype=float))
+        omega = np.asarray(spin_vecs, dtype=float)
+
+        if S0 is None:
+            S0 = np.zeros((2, 3, 3), dtype=float)
+        if W0 is None:
+            W0 = np.zeros((2, 3, 3), dtype=float)
+        S0 = stf(np.asarray(S0, dtype=float))
+        W0 = stf(np.asarray(W0, dtype=float))
+
+        J0 = 0.4 * mass_arr * radius_arr ** 2
+        omega_grav_sq = (4.0 / 5.0) * G * mass_arr / radius_arr ** 3
+        omega2 = np.sqrt(omega_grav_sq + np.asarray(extra_stiffness, dtype=float) ** 2)
+        quad_coeff = 0.4 * mass_arr * radius_arr ** 2
+        inertia_shape_coeff = quad_coeff.copy()
+
+        if relax_strength is None:
+            relax_strength_arr = np.zeros((2, 0), dtype=float)
+            relax_time_arr = np.zeros((2, 0), dtype=float)
+        else:
+            relax_strength_arr = np.asarray(relax_strength, dtype=float)
+            relax_time_arr = np.asarray(relax_time, dtype=float)
+
+        params = QuadrupoleParameters(
+            G=G,
+            mass=mass_arr,
+            radius=radius_arr,
+            gamma=np.asarray(gamma, dtype=float),
+            omega2=omega2,
+            J0=J0,
+            quad_coeff=quad_coeff,
+            inertia_shape_coeff=inertia_shape_coeff,
+            rot_flattening_coeff=np.asarray(rot_flattening_coeff, dtype=float),
+            relax_strength=relax_strength_arr,
+            relax_time=relax_time_arr,
+            colors=colors,
+        )
+
+        if params.n_relax > 0:
+            Z0 = np.repeat(S0[:, None, :, :], params.n_relax, axis=1)
+        else:
+            Z0 = np.zeros((params.n_bodies, 0, 3, 3), dtype=float)
+
+        y0 = pack_state(x, v, q_arr, omega, S0, W0, Z0, 0.0)
+        return params, y0
+
+    def _equilibrium_S(x, q, omega, params):
+        zero_S = np.zeros((params.n_bodies, 3, 3), dtype=float)
+        _, E_body, _, _, _ = compute_fields_and_forces(x, quat_normalize(q), omega, zero_S, params)
+        tidal_term = 0.5 * params.quad_coeff[:, None, None] * E_body
+        spin_term = 0.5 * effective_shape_spin_coeff(params)[:, None, None] * spin_flattening_tensor(omega)
+        return -(tidal_term + spin_term) / (params.omega2[:, None, None] ** 2)
+
+    def _run_case(name, params, y0, *, t_end, n_samples, rtol=1e-8, atol=1e-10, make_plot=True):
+        t_end, n_samples = _scaled(t_end, n_samples)
+
+        print("\n" + "=" * 88)
+        print(f"RUNNING TEST: {name}")
+        print("=" * 88)
+
+        sol = simulate(
+            params,
+            y0,
+            t_span=(0.0, t_end),
+            n_samples=n_samples,
+            rtol=rtol,
+            atol=atol,
+            method="DOP853",
+        )
+        record = record_solution(sol, params)
+        diag = two_body_diagnostics(record, params)
+
+        plot_path = None
+        if make_plot:
+            plot_path = os.path.join(output_dir, f"{name}.png")
+
+            old_show = plt.show
+            try:
+                if not show_plots:
+                    plt.show = lambda *args, **kwargs: None
+                fig, _ = make_diagnostics_plot(record, params, filename=plot_path)
+            finally:
+                plt.show = old_show
+
+            try:
+                fig.savefig(plot_path, dpi=180, bbox_inches="tight")
+            finally:
+                if not show_plots:
+                    plt.close(fig)
+
+        return record, diag, plot_path
+
+    def _report_case(name, checks, plot_path=None, extra_lines=None):
+        passed = True
+        print(f"[{name}] criteria")
+        for label, ok, value in checks:
+            passed = passed and bool(ok)
+            status = "PASS" if ok else "FAIL"
+            print(f"  {status:4s}  {label}: {value}")
+
+        if extra_lines:
+            for line in extra_lines:
+                print(f"         {line}")
+
+        if plot_path is not None:
+            print(f"         plot: {plot_path}")
+
+        print(f"[{name}] OVERALL: {'PASS' if passed else 'FAIL'}")
+        return passed
+
+    results = []
+
+    # ------------------------------------------------------------------
+    # 01. Null limit: exact Kepler recovery when quadrupole couplings vanish
+    # ------------------------------------------------------------------
+    params, y0 = _make_two_body_case(
+        a=3.5,
+        e=0.30,
+        radius=(0.30, 0.30),
+        spin_vecs=((0.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
+        gamma=(0.0, 0.0),
+    )
+    params.quad_coeff[:] = 0.0
+    params.inertia_shape_coeff[:] = 0.0
+    params.rot_flattening_coeff[:] = 0.0
+
+    record, diag, plot_path = _run_case(
+        "01_null_kepler_limit",
+        params,
+        y0,
+        t_end=120.0,
+        n_samples=600,
+        rtol=1e-10,
+        atol=1e-12,
+    )
+
+    e_drift = np.max(np.abs(diag["ecc"] - diag["ecc"][0]))
+    a_drift = np.max(np.abs(diag["a"] - diag["a"][0]))
+    energy_drift = np.max(np.abs(record["energy_total_drift"]))
+
+    passed = _report_case(
+        "01_null_kepler_limit",
+        [
+            ("max |Δe| < 5e-6", e_drift < 5e-6, f"{e_drift:.3e}"),
+            ("max |Δa| < 5e-6", a_drift < 5e-6, f"{a_drift:.3e}"),
+            ("max |ΔE_total| < 5e-7", energy_drift < 5e-7, f"{energy_drift:.3e}"),
+        ],
+        plot_path,
+    )
+    results.append(("01_null_kepler_limit", passed))
+
+    # ------------------------------------------------------------------
+    # 02. Conservative closure test: circular synchronous equilibrium
+    # ------------------------------------------------------------------
+    a = 4.0
+    n = _mean_motion(a)
+
+    params, y0 = _make_two_body_case(
+        a=a,
+        e=0.0,
+        radius=(0.25, 0.25),
+        spin_vecs=((0.0, 0.0, n), (0.0, 0.0, n)),
+        gamma=(0.0, 0.0),
+        rot_flattening_coeff=(0.0, 0.0),
+    )
+
+    x, v, q, omega, S, W, Z, D = unpack_state(y0, params.n_bodies, params.n_relax)
+    S_eq = _equilibrium_S(x, q, omega, params)
+    y0 = pack_state(x, v, q, omega, S_eq, np.zeros_like(S_eq), Z, 0.0)
+
+    record, diag, plot_path = _run_case(
+        "02_conservative_equilibrium",
+        params,
+        y0,
+        t_end=180.0,
+        n_samples=700,
+        rtol=1e-9,
+        atol=1e-11,
+    )
+
+    max_energy_drift = np.max(np.abs(record["energy_total_drift"]))
+    max_ecc = np.max(diag["ecc"])
+    mean_bulge_angle = float(np.mean(diag["bulge_line_angle_deg"]))
+
+    passed = _report_case(
+        "02_conservative_equilibrium",
+        [
+            ("max |ΔE_total| < 2e-5", max_energy_drift < 2e-5, f"{max_energy_drift:.3e}"),
+            ("max eccentricity < 2e-3", max_ecc < 2e-3, f"{max_ecc:.3e}"),
+            ("mean bulge-line angle < 2 deg", mean_bulge_angle < 2.0, f"{mean_bulge_angle:.3f} deg"),
+        ],
+        plot_path,
+    )
+    results.append(("02_conservative_equilibrium", passed))
+
+    # ------------------------------------------------------------------
+    # 03. Slow-forcing / quasi-static bulge response
+    # ------------------------------------------------------------------
+    params, y0 = _make_two_body_case(
+        a=8.0,
+        e=0.0,
+        radius=(0.25, 0.25),
+        spin_vecs=((0.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
+        gamma=(2.0, 2.0),
+    )
+
+    record, diag, plot_path = _run_case(
+        "03_quasi_static_bulge",
+        params,
+        y0,
+        t_end=120.0,
+        n_samples=800,
+        rtol=1e-9,
+        atol=1e-11,
+    )
+
+    errs = []
+    for k in range(record["t"].size):
+        S_eq = _equilibrium_S(record["x"][k], record["q"][k], record["omega"][k], params)
+        denom = max(np.linalg.norm(S_eq), 1e-30)
+        errs.append(np.linalg.norm(record["S_body"][k] - S_eq) / denom)
+    errs = np.asarray(errs)
+
+    mask = record["t"] > 0.25 * record["t"][-1]
+    mean_err = float(np.mean(errs[mask]))
+    final_err = float(errs[-1])
+    mean_bulge = float(np.mean(diag["bulge_line_angle_deg"]))
+
+    passed = _report_case(
+        "03_quasi_static_bulge",
+        [
+            ("mean relative shape error < 0.20", mean_err < 0.20, f"{mean_err:.3e}"),
+            ("final relative shape error < 0.10", final_err < 0.10, f"{final_err:.3e}"),
+            ("mean bulge-line angle < 5 deg", mean_bulge < 5.0, f"{mean_bulge:.3f} deg"),
+        ],
+        plot_path,
+    )
+    results.append(("03_quasi_static_bulge", passed))
+
+    # ------------------------------------------------------------------
+    # 04. Rotational flattening in isolation
+    # ------------------------------------------------------------------
+    params, y0 = _make_two_body_case(
+        a=100.0,
+        e=0.0,
+        mass=(1.0, 1e-6),
+        radius=(0.50, 0.05),
+        spin_vecs=((0.0, 0.0, 1.5), (0.0, 0.0, 0.0)),
+        gamma=(1.0, 0.0),
+        rot_flattening_coeff=(0.25, 0.0),
+    )
+
+    record, diag, plot_path = _run_case(
+        "04_rotational_flattening",
+        params,
+        y0,
+        t_end=30.0,
+        n_samples=500,
+        rtol=1e-9,
+        atol=1e-11,
+    )
+
+    S1 = record["S_body"][-1, 0]
+    omega1 = record["omega"][-1, 0][None, :]
+    c_eff = effective_shape_spin_coeff(params)[0]
+    S_rot = -(0.5 * c_eff * spin_flattening_tensor(omega1)[0]) / (params.omega2[0] ** 2)
+
+    rel_err = np.linalg.norm(S1 - S_rot) / max(np.linalg.norm(S_rot), 1e-30)
+    evals = np.linalg.eigvalsh(S1)
+    oblate_signature = bool((evals[0] < 0.0) and (evals[2] > 0.0))
+
+    passed = _report_case(
+        "04_rotational_flattening",
+        [
+            ("relative error to isolated rotational equilibrium < 0.10", rel_err < 0.10, f"{rel_err:.3e}"),
+            ("oblate eigenvalue signature present", oblate_signature, np.array2string(evals, precision=4)),
+        ],
+        plot_path,
+    )
+    results.append(("04_rotational_flattening", passed))
+
+    # ------------------------------------------------------------------
+    # 05. Rheology comparison: viscous vs Maxwell-like relaxation
+    # ------------------------------------------------------------------
+    a = 2.4
+    n = _mean_motion(a)
+
+    common_kwargs = dict(
+        a=a,
+        e=0.12,
+        radius=(0.43, 0.35),
+        spin_vecs=((0.0, 0.0, 3.5 * n), (0.0, 0.0, 1.0 * n)),
+        rot_flattening_coeff=(0.16, 0.10),
+    )
+
+    params_A, y0_A = _make_two_body_case(
+        **common_kwargs,
+        gamma=(0.6, 0.0),
+    )
+    record_A, diag_A, plot_A = _run_case(
+        "05A_rheology_viscous",
+        params_A,
+        y0_A,
+        t_end=120.0,
+        n_samples=700,
+    )
+
+    params_B, y0_B = _make_two_body_case(
+        **common_kwargs,
+        gamma=(0.0, 0.0),
+        relax_strength=((0.8,), (0.0,)),
+        relax_time=((2.0,), (1.0,)),
+    )
+    record_B, diag_B, plot_B = _run_case(
+        "05B_rheology_maxwell",
+        params_B,
+        y0_B,
+        t_end=120.0,
+        n_samples=700,
+    )
+
+    lag_A = float(np.mean(diag_A["bulge_line_angle_deg"][:, 0]))
+    lag_B = float(np.mean(diag_B["bulge_line_angle_deg"][:, 0]))
+    diss_A = float(record_A["cumulative_dissipation"][-1])
+    diss_B = float(record_B["cumulative_dissipation"][-1])
+
+    lag_diff = abs(lag_A - lag_B)
+    diss_rel_diff = abs(diss_A - diss_B) / max(abs(diss_A), abs(diss_B), 1e-12)
+
+    passed = _report_case(
+        "05_rheology_comparison",
+        [
+            ("|mean lag difference| > 0.5 deg", lag_diff > 0.5, f"{lag_diff:.3f} deg"),
+            ("relative dissipation difference > 5%", diss_rel_diff > 0.05, f"{100.0 * diss_rel_diff:.2f} %"),
+        ],
+        extra_lines=[
+            f"viscous plot: {plot_A}",
+            f"maxwell plot: {plot_B}",
+            f"viscous mean lag = {lag_A:.3f} deg, maxwell mean lag = {lag_B:.3f} deg",
+            f"viscous final D = {diss_A:.6e}, maxwell final D = {diss_B:.6e}",
+        ],
+    )
+    results.append(("05_rheology_comparison", passed))
+
+    # ------------------------------------------------------------------
+    # 06. Circularization and inspiral
+    # ------------------------------------------------------------------
+    a = 2.6
+    n = _mean_motion(a)
+
+    params, y0 = _make_two_body_case(
+        a=a,
+        e=0.45,
+        radius=(0.45, 0.40),
+        spin_vecs=((0.0, 0.0, 1.8 * n), (0.0, 0.0, 0.6 * n)),
+        gamma=(0.35, 0.45),
+        relax_strength=((0.5,), (0.3,)),
+        relax_time=((2.5,), (1.6,)),
+        rot_flattening_coeff=(0.18, 0.14),
+    )
+
+    record, diag, plot_path = _run_case(
+        "06_circularization",
+        params,
+        y0,
+        t_end=180.0,
+        n_samples=900,
+    )
+
+    e0, ef = float(diag["ecc"][0]), float(diag["ecc"][-1])
+    a0, af = float(diag["a"][0]), float(diag["a"][-1])
+    energy_rel_drift = np.max(np.abs(record["energy_total_drift"])) / max(abs(record["energy_total_with_dissipation"][0]), 1e-12)
+
+    passed = _report_case(
+        "06_circularization",
+        [
+            ("final eccentricity < initial eccentricity", ef < e0, f"e0={e0:.4f}, ef={ef:.4f}"),
+            ("final semi-major axis < initial semi-major axis", af < a0, f"a0={a0:.4f}, af={af:.4f}"),
+            ("relative total-energy drift < 2%", energy_rel_drift < 2.0e-2, f"{100.0 * energy_rel_drift:.3f} %"),
+        ],
+        plot_path,
+    )
+    results.append(("06_circularization", passed))
+
+    # ------------------------------------------------------------------
+    # 07. Spin-down toward synchronization
+    # ------------------------------------------------------------------
+    a = 2.0
+    n = _mean_motion(a)
+
+    params, y0 = _make_two_body_case(
+        a=a,
+        e=0.0,
+        radius=(0.45, 0.45),
+        spin_vecs=((0.0, 0.0, 4.0 * n), (0.0, 0.0, 1.0 * n)),
+        gamma=(0.3, 0.3),
+        rot_flattening_coeff=(0.20, 0.20),
+    )
+
+    record, diag, plot_path = _run_case(
+        "07_spin_synchronization",
+        params,
+        y0,
+        t_end=180.0,
+        n_samples=900,
+    )
+
+    sr0 = float(diag["spin_ratio"][0, 0])
+    srf = float(diag["spin_ratio"][-1, 0])
+    min_sr = float(np.min(diag["spin_ratio"][:, 0]))
+    mean_lag = float(np.mean(diag["bulge_line_angle_deg"][:, 0]))
+
+    passed = _report_case(
+        "07_spin_synchronization",
+        [
+            ("spin ratio decreases", srf < sr0, f"initial={sr0:.4f}, final={srf:.4f}"),
+            ("final spin ratio is closer to 1 than initial", abs(srf - 1.0) < abs(sr0 - 1.0),
+             f"|final-1|={abs(srf - 1.0):.4f}, |initial-1|={abs(sr0 - 1.0):.4f}"),
+            ("mean bulge lag > 0.2 deg", mean_lag > 0.2, f"{mean_lag:.3f} deg"),
+            ("minimum spin ratio is below the initial one", min_sr < sr0, f"min={min_sr:.4f}"),
+        ],
+        plot_path,
+    )
+    results.append(("07_spin_synchronization", passed))
+
+    # ------------------------------------------------------------------
+    # 08. Obliquity survey
+    # ------------------------------------------------------------------
+    representative_plot = None
+    survey = []
+
+    for tilt in (15.0, 45.0, 75.0):
+        for gam in (0.10, 0.30, 0.60):
+            params, y0 = _make_two_body_case(
+                a=2.5,
+                e=0.15,
+                radius=(0.42, 0.38),
+                spin_vecs=(
+                    _sph(tilt, phi_deg=0.0, mag=1.8 * _mean_motion(2.5)),
+                    _sph(0.5 * tilt, phi_deg=180.0, mag=0.9 * _mean_motion(2.5)),
+                ),
+                gamma=(gam, gam),
+                rot_flattening_coeff=(0.18, 0.14),
+            )
+
+            make_plot = (tilt == 45.0 and abs(gam - 0.30) < 1e-12)
+
+            record, diag, plot_path = _run_case(
+                f"08_obliquity_tilt_{int(tilt):02d}_gamma_{int(round(100 * gam)):02d}",
+                params,
+                y0,
+                t_end=120.0,
+                n_samples=600,
+                make_plot=make_plot,
+            )
+
+            dtheta1 = float(diag["spin_orbit_angle_deg"][-1, 0] - diag["spin_orbit_angle_deg"][0, 0])
+            survey.append((tilt, gam, dtheta1))
+
+            if make_plot:
+                representative_plot = plot_path
+
+    dtheta_vals = np.array([row[2] for row in survey], dtype=float)
+    frac_negative = np.mean(dtheta_vals < 0.0)
+    median_dtheta = float(np.median(dtheta_vals))
+
+    passed = _report_case(
+        "08_obliquity_survey",
+        [
+            ("at least half the survey runs damp obliquity", frac_negative >= 0.5, f"fraction={frac_negative:.3f}"),
+            ("median Δ(theta_spin-orbit) < 0", median_dtheta < 0.0, f"median={median_dtheta:.4f} deg"),
+        ],
+        representative_plot,
+        extra_lines=[
+            "survey grid = tilts {15,45,75} deg × gamma {0.10,0.30,0.60}",
+            "Δ(theta) < 0 means net obliquity damping over the run",
+        ],
+    )
+    results.append(("08_obliquity_survey", passed))
+
+    # ------------------------------------------------------------------
+    # Summary
+    # ------------------------------------------------------------------
+    print("\n" + "#" * 88)
+    print("TEST SUMMARY")
+    print("#" * 88)
+    n_pass = 0
+    for name, passed in results:
+        print(f"{'PASS' if passed else 'FAIL'}  {name}")
+        n_pass += int(bool(passed))
+    print(f"Passed {n_pass} / {len(results)} tests.")
+    print(f"Plots saved in: {output_dir}")
+
+    return {
+        "results": results,
+        "output_dir": output_dir,
+    }
+
+
 if __name__ == "__main__":
+    # run_tests()
+    # exit()
+    #
     # with np.load(r'c:\Programs\Shapley\pythonProject\tidal_cache.npz', allow_pickle=True) as dat:
     #     record = dat['record'].item()
     #     params = dat['params'].item()
