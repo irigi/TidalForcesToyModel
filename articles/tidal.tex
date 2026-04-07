@@ -35,7 +35,7 @@ surfaces deviate from exact sphericity through damped pseudo-fluid modes.
 The goal is not a full hydrodynamic interior simulation, but a structured
 reduced model that still contains the key mechanisms of tidal evolution:
 tidal bulges, gravitational backreaction of the bulges, spin torques,
-orbital circularization, spin synchronization, and obliquity damping.
+orbital circularization, spin synchronization, and obliquity evolution.
 First, a general deformable-body formulation is written in which each planet
 has orbital motion, rigid-body orientation, spin, and an arbitrary set of
 surface modes. Second, a feasible all-mode approximation is introduced using
@@ -43,10 +43,12 @@ body-frame symmetric trace-free tensors and generalized rheology with
 relaxation branches. Third, a quadrupole truncation is derived and written
 in a form directly suitable for numerical integration. Compared with the
 simplest quadrupole tide model, the upgraded version includes
-shape-dependent spin inertia, rotational flattening, and frequency-dependent
-lag through internal memory variables. The relation of the model to real
-planetary tide problems, and its status as a structured toy model rather than
-a full geophysical code, are discussed explicitly.
+shape-dependent spin inertia, rotational flattening, frequency-dependent
+lag through internal memory variables, and the leading quadrupole angular
+momentum carried by the deformation itself. This last correction restores the
+explicit quadrupole torque to the reduced spin equation without upsetting the
+conservative bookkeeping, making the model materially better suited to
+obliquity studies.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -76,27 +78,24 @@ following properties:
 implementation model.
 \end{enumerate}
 
-The resulting framework is still a reduced model. It is much closer to a
+The resulting framework is still a reduced model---much closer to a
 ``structured toy model'' than to a full planetary interior simulation.
-However, it is not an arbitrary toy. It is designed so that the
-couplings between orbit, spin, and deformation have the correct geometric
-form, and so that increasingly refined approximations can be introduced
-without changing the overall architecture.
+It is not an arbitrary toy, however: the couplings between orbit, spin, and
+deformation have the correct geometric form, and increasingly refined
+approximations can be introduced without changing the overall architecture.
 
-Compared with the simplest damped-quadrupole tide model, the present version
-includes three important improvements:
-\begin{itemize}
-\item the spin inertia depends on the tidal deformation,
-\item rotational flattening is included through the same shape-dependent spin
-inertia that appears in the reduced spin kinetic energy, so the rotational
-forcing and the energy bookkeeping use one common coefficient,
-\item the dissipative response can be modeled by one or more relaxation
-branches rather than a single constant time-lag term.
-\end{itemize}
-
-These additions make the reduced model substantially more faithful to real
-tidal systems while keeping the equations in ordinary differential equation
-(ODE) form.
+Four specific improvements distinguish the present version from the simplest
+damped-quadrupole model. The spin inertia depends on the tidal deformation.
+Rotational flattening is handled through the same shape-dependent coefficient
+that enters the spin kinetic energy, so the rotational forcing and the energy
+bookkeeping share a single common parameter. The dissipative response supports
+one or more relaxation branches rather than a single constant time-lag term,
+allowing frequency-dependent rheology while remaining in ordinary differential
+equation (ODE) form. Finally, the quadrupole closure retains the leading
+angular momentum carried by the quadrupole mode itself; this is the minimal
+correction that allows the explicit quadrupole torque to appear in the spin
+equation without spoiling conservative bookkeeping, and it is especially
+important for obliquity evolution.
 
 \section{Kinematics and Variables}
 
@@ -239,9 +238,6 @@ Y_{\ell m}^{*}(\hat y)\,d\Omega.
 \label{eq:QlmSurface}
 \end{equation}
 
-This is the exact sense in which the deformation changes the gravitational
-field.
-
 \subsection{Exact pseudo-fluid motion}
 
 Let the internal motion be irrotational in the body frame:
@@ -332,8 +328,8 @@ T_{\mathrm{orb}} + T_{\mathrm{int+spin}}
 \label{eq:Lexact}
 \end{equation}
 
-This exact moving-boundary model is conceptually useful, but it is not
-practical as a general-purpose tide integrator. The moving-domain Laplace
+This exact moving-boundary model is conceptually useful, but not practical
+as a general-purpose tide integrator. The moving-domain Laplace
 problem, the nonlinear volume constraints, and the double volume integrals
 make it far more expensive than desired. The rest of the paper develops a
 feasible approximation that keeps the same orbit--spin--shape structure.
@@ -369,7 +365,8 @@ trace-free part is
 \frac{1}{3}(\mathrm{tr}\,B)I_3.
 \label{eq:STFdef}
 \end{equation}
-In particular,
+In particular, since $\Omega_a\Omega_a^\top$ is already symmetric, the
+symmetrization step in \eqref{eq:STFdef} is redundant and one simply has
 \begin{equation}
 \mathrm{STF}(\Omega_a\Omega_a^\top)
 =
@@ -400,8 +397,6 @@ Its second derivative is
 D_t^2 A = D_t(D_t A).
 \label{eq:Dt2A}
 \end{equation}
-
-This is the correct body-frame transport law for a tensorial tidal mode.
 
 \subsection{External tidal moments}
 
@@ -443,6 +438,9 @@ J_a(S_a)
 J_{a0} I_3 - c_{J,a} S_a + O(S_a^2).
 \label{eq:Jlinear}
 \end{equation}
+Though this form is sufficient at the present level, an effective coefficient
+will be introduced later in the reduced quadrupole closure to absorb the
+contribution from rotational flattening.
 
 This correction is important for leading-order consistency between tidal
 torques and spin dynamics. In the reduced quadrupole closure developed below,
@@ -600,17 +598,19 @@ so that the reduced spin equation and the reduced energy remain consistent.
 
 \subsection{Comments on angular momentum}
 
+The angular-momentum bookkeeping of the reduced model deserves emphasis,
+because it is the point where a naive implementation most easily goes wrong.
 The reduced model is most consistent when the spin equation is derived from
 the same Lagrangian that defines the mode kinetic energy. In that case
 $\Pi_a$ includes not only the rigid-spin part $J_a[A]\Omega_a$, but also the
-angular momentum carried by the corotational mode kinetic terms. For a
-strictly leading-order quadrupole implementation, one may keep only the
-dominant shape dependence of the rigid-spin inertia and neglect higher-order
-modal contributions to $\Pi_a$. This is the approximation most often taken
-in practice. The resulting quadrupole closure therefore preserves the leading
-spin--shape coupling while sacrificing exact global angular-momentum
-conservation at higher order, because the angular momentum stored in the
-deformation itself is not evolved explicitly.
+angular momentum carried by the corotational mode kinetic terms. For the
+quadrupole reduction developed below, retaining the leading contribution of
+that modal angular momentum turns out to be essential: it is the minimal
+correction that allows the explicit quadrupole torque to act in the spin
+balance without spoiling the conservative bookkeeping. Higher-order modal and
+higher-multipole contributions to $\Pi_a$ may still be neglected in a reduced
+implementation, but the leading quadrupole piece should be kept whenever one
+wants the reduced model to represent secular obliquity evolution credibly.
 
 \section{Physical Interpretation of the Full Modal Model}
 
@@ -656,13 +656,12 @@ selected by this conservative coupling, modified by any dissipation present.
 
 The relaxation branches cause the deformation to lag behind the forcing. The
 lagged bulge exerts a torque on the spin and modifies the force on the orbit.
-As a result, the model supports:
-\begin{itemize}
-\item spin synchronization or pseudo-synchronization,
-\item obliquity damping,
-\item orbital circularization,
-\item exchange of angular momentum between orbit, spin, and tides.
-\end{itemize}
+As a result, the model supports spin synchronization or pseudo-synchronization,
+obliquity damping, orbital circularization, and exchange of angular momentum
+between orbit, spin, and tides. In the quadrupole truncation developed in the
+next section, these effects arise from the combined action of the lagged shape
+tensor, the explicit quadrupole torque, and the modal angular momentum
+$\Pi_{S,a}$ retained in the spin balance.
 
 \section{Quadrupole Reduction}
 
@@ -769,9 +768,9 @@ Because the quadrupole interaction energy is
 \begin{equation}
 U_{\mathrm{tide},a}^{(2)}
 =
--\frac{1}{2} I_a : E_{a,\mathrm{in}}
++\frac{1}{2} I_a : E_{a,\mathrm{in}}
 =
--\frac{c_{Q,a}}{2} S_a : E_{a,\mathrm{body}},
++\frac{c_{Q,a}}{2} S_a : E_{a,\mathrm{body}},
 \label{eq:Utidequad}
 \end{equation}
 the reciprocal tidal forcing that appears in the shape equation is
@@ -877,29 +876,80 @@ approximate a broader frequency-dependent rheology.
 
 \subsection{Spin equation}
 
-In the particular leading-order quadrupole closure used by the reference
-implementation, the body-frame spin equation is
+For obliquity-sensitive applications, the reduced quadrupole model should
+retain the leading angular momentum carried by the quadrupole mode itself.
+With
 \begin{equation}
-\frac{d}{dt}\bigl(J_a(S_a)\Omega_a\bigr)
+W_a=D_tS_a,
+\label{eq:Wdefrepeat}
+\end{equation}
+and with $\operatorname{axl}(\widehat v)=v$ for antisymmetric matrices, the
+leading quadrupole modal contribution is
+\begin{equation}
+\Pi_{S,a}
+=
+2\,\operatorname{axl}\!\bigl([W_a,S_a]\bigr).
+\label{eq:Pimodequad}
+\end{equation}
+This follows directly from $\Pi_a=\partial L/\partial\Omega_a$ applied to the
+quadrupole kinetic term $\tfrac12\|W_a\|^2$.
+
+The same objective-rate dissipative terms that appear in the shape equations
+also generate reciprocal body torques. For the direct viscous damping and the
+relaxation branches, define
+\begin{equation}
+N^{\mathrm{diss}}_{W,a}
+=
+-2\gamma_a\,\Pi_{S,a}
+=
+-4\gamma_a\,\operatorname{axl}\!\bigl([W_a,S_a]\bigr),
+\label{eq:NdissW}
+\end{equation}
+and
+\begin{equation}
+N^{\mathrm{diss}}_{Z,a}
+=
+-2\sum_{n=1}^{N_{\mathrm{r},a}}
+ c_{an}\,\operatorname{axl}\!\bigl([S_a-Z_{an},Z_{an}]\bigr).
+\label{eq:NdissZ}
+\end{equation}
+These terms vanish in the nondissipative limit and ensure that the same
+objective-rate dissipation that damps the internal tensors also removes the
+corresponding body-frame angular momentum from the rigid-spin sector.
+
+The improved body-frame quadrupole spin equation is therefore
+\begin{align}
+\frac{d}{dt}\Bigl(J_a(S_a)\Omega_a+\Pi_{S,a}\Bigr)
 +
 \Omega_a\times
-\bigl(J_a(S_a)\Omega_a\bigr)
-=
-0.
+\Bigl(J_a(S_a)\Omega_a+\Pi_{S,a}\Bigr)
+\nonumber \\= 
+N_{a,\mathrm{body}}
++
+N^{\mathrm{diss}}_{W,a}
++
+N^{\mathrm{diss}}_{Z,a}.
 \label{eq:spinquad}
-\end{equation}
+\end{align}
 
 Expanding the time derivative gives
-\begin{equation}
+\begin{align}
 J_a(S_a)\dot\Omega_a
 =
+N_{a,\mathrm{body}}
++
+N^{\mathrm{diss}}_{W,a}
++
+N^{\mathrm{diss}}_{Z,a}
 -
-\dot J_a(S_a)\Omega_a
+\dot J_a(S_a)\Omega_a \nonumber \\
+-
+\dot\Pi_{S,a}
 -
 \Omega_a\times
-\bigl(J_a(S_a)\Omega_a\bigr).
+\Bigl(J_a(S_a)\Omega_a+\Pi_{S,a}\Bigr).
 \label{eq:spinexpanded}
-\end{equation}
+\end{align}
 Since $W_a=D_tS_a$, one also has
 \begin{equation}
 \dot S_a = W_a-[\widehat{\Omega}_a,S_a],
@@ -910,20 +960,20 @@ so that in the linearized closure
 \dot J_a(S_a)=-\tilde c_{J,a}\dot S_a.
 \label{eq:JdotS}
 \end{equation}
-This is the simplest leading-order correction that accounts for the fact that
-the tidal bulge changes the moment of inertia. In the present reduced model,
-it is paired with the deliberate omission of the deformation's own angular
-momentum from $\Pi_a$, as discussed above.
+The modal contribution evolves as
+\begin{equation}
+\dot\Pi_{S,a}
+=
+2\,\operatorname{axl}\!\bigl([\dot W_a,S_a]+[W_a,\dot S_a]\bigr).
+\label{eq:Pimodedot}
+\end{equation}
+Equations \eqref{eq:spinquad}--\eqref{eq:Pimodedot} explicitly retain the
+orientational dynamics carried by the quadrupole mode. The shape dependence of
+$J_a(S_a)$ still captures the accompanying change in spin inertia, but
+retaining $\Pi_{S,a}$ is required to close the spin--tide angular-momentum
+exchange at this order.
 
-The same truncated quadrupole potential still defines a formal torque, but in
-this reduced closure that torque is not inserted as a second independent term
-on the right-hand side of \eqref{eq:spinquad}. The orientational dependence of
-the interaction is already represented through the body-frame transport term in
-\eqref{eq:SdotFromW}; adding the explicit torque again would double count the
-same conservative $Q_a$--$S_a$ coupling and produces a secular drift in the
-``mechanical plus dissipated'' energy diagnostic of the implementation.
-
-\subsection{Diagnostic quadrupole torque}
+\subsection{Quadrupole torque}
 
 The inertial quadrupole torque associated with the same truncated interaction
 energy is
@@ -943,9 +993,12 @@ N_{a,\mathrm{body}}
 Q_a^\top N_{a,\mathrm{in}}.
 \label{eq:Nbody}
 \end{equation}
-In the implementation described here, \eqref{eq:Nin}--\eqref{eq:Nbody} are
-useful diagnostics of the orientational tendency of the bulge, but they are
-not added as a separate forcing term in \eqref{eq:spinquad}.
+In the improved quadrupole closure, \eqref{eq:Nin}--\eqref{eq:Nbody} are not
+merely diagnostic: they are the physical right-hand side of
+\eqref{eq:spinquad}. Because the spin balance explicitly retains the modal
+angular momentum \eqref{eq:Pimodequad} generated by the same corotational
+kinematics, this torque enters without double-counting the conservative
+$Q_a$--$S_a$ coupling.
 
 \subsection{Orbital dynamics}
 
@@ -983,7 +1036,9 @@ Equations
 \eqref{eq:Zquad},
 \eqref{eq:spinquad}, and
 \eqref{eq:Xquad}
-form a closed quadrupole tide model.
+form a closed quadrupole tide model. Relative to the simpler reduced closure
+that keeps only $J_a(S_a)\Omega_a$, the additional term \eqref{eq:Pimodequad}
+is algebraically modest but physically important for obliquity evolution.
 
 \subsection{First-order implementation form}
 
@@ -1015,18 +1070,23 @@ solvers. In particular, if one implements the inertial quadrupole as
 $I_a=c_{Q,a}Q_aS_aQ_a^\top$ in the orbital force and pair potential,
 then the same model must use the reciprocal coefficient
 $\lambda_a=c_{Q,a}/2$ in \eqref{eq:Seq} and \eqref{eq:firstW}; otherwise the
-bookkeeping of conservative energy is inconsistent. The associated torque
-formula \eqref{eq:Nin} should be treated as diagnostic in this leading-order
-closure rather than inserted as an additional right-hand-side term in the spin
-ODE, because the corotational coupling already represented by
-\eqref{eq:SdotFromW} accounts for the same conservative orientational
-interaction. Likewise, the same coefficient $\tilde c_{J,a}$ must appear both
-in the inertia tensor \eqref{eq:JS} and in the rotational forcing term of
-\eqref{eq:Seq} and \eqref{eq:firstW}. In that reduced closure the coupling is
-already stored in
-$\frac{1}{2}\Omega_a^\top J_a(S_a)\Omega_a$, so adding an extra
-spin--shape energy term would double count it and produce a secular drift in
-``mechanical plus dissipated'' energy plots.
+bookkeeping of conservative energy is inconsistent. Likewise, the same
+coefficient $\tilde c_{J,a}$ must appear both in the inertia tensor
+\eqref{eq:JS} and in the rotational forcing term of \eqref{eq:Seq} and
+\eqref{eq:firstW}. In the improved closure, the spin update should then be
+performed from \eqref{eq:spinexpanded} with the explicit conservative torque
+$N_{a,\mathrm{body}}$, the reciprocal dissipative torques
+\eqref{eq:NdissW}--\eqref{eq:NdissZ}, and the modal angular-momentum term
+\eqref{eq:Pimodequad}. This is still a modest implementation change because
+$\dot S_a$, $\dot W_a$, and the branch lags $S_a-Z_{an}$ are already available
+from the first-order state, so both $\dot\Pi_{S,a}$ in \eqref{eq:Pimodedot} and
+the algebraic dissipative torques can be assembled at the same right-hand-side
+evaluation. In the split extension below, the same update simply includes the
+additional bulge-branch torque \eqref{eq:NdissB}. No additional conservative
+storage term
+proportional to $S_a:\mathrm{STF}(\Omega_a\Omega_a^\top)$ should be added on top of
+$\tfrac12\Omega_a^\top J_a(S_a)\Omega_a$, because that Hamiltonian term
+already contains the rotational-flattening coupling in this reduced closure.
 
 \subsection{Conservative quadrupole energy}
 
@@ -1055,112 +1115,195 @@ $S_a:\mathrm{STF}(\Omega_a\Omega_a^\top)$ unless the reduced spin equation is
 simultaneously upgraded to evolve the corresponding extra contribution to the
 body-frame angular momentum.
 
-\section{What the Quadrupole Model Captures}
 
-The quadrupole model is the smallest version that still contains the main
-tidal phenomena.
+\section{Split rotational-bulge extension for obliquity damping}
 
-\subsection{Tidal bulge}
+The one-tensor quadrupole closure developed above formally conserves angular
+momentum by retaining the modal contribution $\Pi_{S,a}$ and the explicit
+quadrupole torque in the spin balance. Even so, a single STF tensor $S_a$ must
+then represent both the tide-raised bulge and the rotationally supported
+oblateness. These two mechanisms generally relax on different timescales and
+need not remain aligned with the same direction, so a more flexible reduced
+model separates them.
 
-In the slow-forcing limit,
+A simple next-level reduced model is therefore to split the quadrupole into a
+\emph{tide-driven} STF tensor $S_a$ and a separate \emph{rotational bulge}
+$B_a$, also taken symmetric and trace free. The total body-frame quadrupole is
+then written as
 \begin{equation}
-S_a
-\approx
--\omega_{a2}^{-2}
-\left[
-\lambda_a E_{a,\mathrm{body}}
-+
-\frac{1}{2}\tilde c_{J,a}\,
-\mathrm{STF}
-\bigl(
-\Omega_a\Omega_a^\top
-\bigr)
-\right]
+I_{a,\mathrm{body}} = c_{Q,a}^{(t)} S_a + c_{Q,a}^{(r)} B_a,
 \end{equation}
-up to rheological corrections. The first term is the ordinary tidal bulge,
-and the second is rotational oblateness.
+and the corresponding inertial quadrupole is therefore
+\begin{equation}
+I_a = Q_a\,I_{a,\mathrm{body}}\,Q_a^\top
+= Q_a\bigl(c_{Q,a}^{(t)} S_a + c_{Q,a}^{(r)} B_a\bigr)Q_a^\top,
+\label{eq:IquadSplit}
+\end{equation}
+while the body-frame spin inertia becomes
+\begin{equation}
+J_a(B_a) = J_{a0} I_3 - c_{J,a}^{(r)} B_a.
+\label{eq:JSsplitB}
+\end{equation}
+In this split closure the tide-driven tensor $S_a$ contributes to the external
+quadrupole but not directly to the reduced spin inertia. This avoids
+reintroducing a separate conservative spin--shape coupling into the $S_a$
+equation while keeping the rotational bulge $B_a$ as the explicit carrier of
+spin-supported flattening.
+The tide-driven quadrupole continues to satisfy the second-order rheological
+shape equation,
+\begin{align}
+D_t^2 S_a
+&+
+2\gamma_a D_t S_a
++
+\omega_{a2}^2 S_a
++
+\sum_{n=1}^{N_{\mathrm{r},a}} c_{an}(S_a-Z_{an})
+\nonumber\\
+&= -\lambda_a E_{a,\mathrm{body}},
+\label{eq:Seqsplit}
+\end{align}
+with the same branch equations
+\begin{equation}
+\tau_{an} D_t Z_{an} = S_a - Z_{an}.
+\label{eq:Zsplit}
+\end{equation}
+The rotational bulge is promoted to its own reduced variable and evolved with a
+first-order corotating relaxation law,
+\begin{subequations}
+\label{eq:Bquad}
+\begin{align}
+\tau_{B,a} D_t B_a + B_a &= -\eta_a\,\mathrm{STF}(\Omega_a\Omega_a^\top)
+-\lambda_{B,a} E_{a,\mathrm{body}},
+ \\
+\lambda_{B,a}&=\eta_a\,\frac{c_{Q,a}^{(r)}}{c_{J,a}^{(r)}},
+\end{align}
+\end{subequations}
+where $\tau_{B,a}$ is the relaxation time of the spin-supported figure and
+$\eta_a>0$ controls its quasi-static amplitude. The additional reciprocal tidal
+term is required if the same $B_a$ contributes both to the spin inertia and to
+the external quadrupole: otherwise the orbital field can do conservative work on
+$B_a$ through $I_a$ with no matching forcing in the $B_a$ equation. With the STF
+sign convention used throughout this paper, the minus sign in the spin forcing is
+required for a positive-spin-rate hydrostatic bulge to be oblate, i.e. compressed
+along the spin axis and enlarged in the orthogonal directions. In the limit
+$\tau_{B,a}\to 0$ the spin bulge approaches the instantaneous hydrostatic figure,
+while finite $\tau_{B,a}$ allows the rotational bulge to lag behind changes in
+spin rate, spin direction, or the body-frame tidal tensor. Because $B_a$ is
+itself a shape tensor, the coefficient $c_{J,a}^{(r)}$ in~\eqref{eq:JSsplitB}
+should be read as the geometric map from shape to spin inertia. It is typically
+of the same order as the ordinary inertia-shape coefficient $c_{J,a}$. The extra
+rotational-flattening strength that was merged into
+$\tilde c_{J,a}=c_{J,a}+2\alpha_a$ in the one-tensor closure should here be
+absorbed into the response amplitude $\eta_a$, not into an additional direct
+$S_a$-dependence of the spin inertia.
 
-\subsection{Lagged bulge}
+For diagnostics and energy bookkeeping in the split closure, the stored
+mechanical contribution of the first-order bulge branch is the non-negative
+self-energy
+\begin{equation}
+\mathcal E_B
+= \sum_a \frac{c_{J,a}^{(r)}}{4\eta_a}\,B_a:B_a.
+\label{eq:EBsplit}
+\end{equation}
+No additional explicit $B_a:E_{a,\mathrm{body}}$ term should be added on top of
+this: the conservative tidal coupling of $B_a$ is already present through the
+total quadrupole in the pair interaction energy~\eqref{eq:Uab}, and adding it
+again would double count the same interaction.
 
-The presence of $\gamma_a$ and the relaxation branches $Z_{an}$ implies that
-the quadrupole is not exactly aligned with the instantaneous forcing. The
-resulting misalignment drives secular exchange between orbit and spin. In the
-present closure the diagnostic torque \eqref{eq:Nin} is generally nonzero,
-while the spin responds through the coupled $S_a$-dependence of $J_a(S_a)$ and
-the corotational transport terms.
+Matching the low-frequency visible equilibrium of the one-tensor model gives
+$\eta_a \approx (c_{J,a}+2\alpha_a)/(2\omega_{a2}^2)$, while matching its
+low-frequency phase lag gives $\tau_{B,a}\approx 2\gamma_a/\omega_{a2}^2$.
 
-\subsection{Spin locking and obliquity damping}
+For bookkeeping, the non-negative dissipation rate of this first-order branch is
+naturally governed by the lag away from the instantaneous target
+$B_{a,*}=-\eta_a\,\mathrm{STF}(\Omega_a\Omega_a^\top)-\lambda_{B,a}E_{a,\mathrm{body}}$,
+namely
+\begin{equation}
+\dot D_B
+= \sum_a \frac{c_{J,a}^{(r)}}{2\eta_a\tau_{B,a}}
+\,(B_a-B_{a,*}):(B_a-B_{a,*}).
+\end{equation}
+The recoverable mechanical energy is therefore the branch \emph{self-energy}
+\eqref{eq:EBsplit}, not the lag energy. Equivalently, completing the square
+around $B_{a,*}$ produces a lag-squared term plus a forcing-dependent offset.
+Keeping only $(B_a-B_{a,*}):(B_a-B_{a,*})$ as a stored-energy diagnostic would
+make the bookkeeping look artificially non-conservative in oblique or
+precessing runs because $B_{a,*}$ changes as the body-frame tidal tensor and
+spin direction evolve.
 
-If the body-frame forcing changes in time, then the bulge is driven around in
-the rotating frame. In the present leading-order closure, synchronization and
-obliquity damping arise from the coupled shape dynamics and the
-$S_a$-dependence of the spin inertia, while \eqref{eq:Nin} remains a
-diagnostic measure of the corresponding orientational tendency rather than a
-second explicit right-hand-side term.
+The spin equation is then upgraded only slightly:
+\begin{align}
+\frac{d}{dt}\Bigl(J_a(B_a)&\Omega_a + \Pi_{S,a}\Bigr)
++
+\Omega_a\times\Bigl(J_a(B_a)\Omega_a + \Pi_{S,a}\Bigr)
+=\nonumber \\
+&N_{a,\mathrm{body}}
++
+N^{\mathrm{diss}}_{W,a}
++
+N^{\mathrm{diss}}_{Z,a}
++
+N^{\mathrm{diss}}_{B,a},
+\label{eq:spinquadSplit}
+\end{align}
+where $\Pi_{S,a}=2\,\operatorname{axl}([W_a,S_a])$ is still the explicit modal
+angular momentum retained from the second-order tide-driven quadrupole, and the
+first-order bulge branch contributes the reciprocal dissipative torque
+\begin{subequations}
+\label{eq:NdissB}
+\begin{align}
+N^{\mathrm{diss}}_{B,a}
+&=
+-\frac{c_{J,a}^{(r)}}{\eta_a}\,
+\operatorname{axl}\!\bigl([B_{a,*}-B_a,B_a]\bigr),
+ \\
+B_{a,*}&=-\eta_a\,\mathrm{STF}(\Omega_a\Omega_a^\top)-\lambda_{B,a}E_{a,\mathrm{body}}.
+\end{align}
+\end{subequations}
+The first-order variable $B_a$ does not introduce an additional second-order
+modal kinetic term, so no separate $\Pi_{B,a}$ is required in this reduced
+extension. The orbital force and body-frame torque are computed from the total
+quadrupole \eqref{eq:IquadSplit} in the same way as before. In particular, the
+tide-driven shape equation continues to use only the reciprocal coupling to the
+tide-driven piece, namely $-\lambda_a E_{a,\mathrm{body}}$ with
+$\lambda_a=c_{Q,a}^{(t)}/2$; the rotational bulge enters the orbital dynamics
+and torque only through the total quadrupole $I_a$, the spin inertia
+$J_a(B_a)$, and the branch torque $N^{\mathrm{diss}}_{B,a}$ associated with its
+corotational relaxation.
 
-\subsection{Circularization}
-
-Because the quadrupole is repeatedly driven and dissipated on an eccentric
-orbit, orbital energy is removed while angular momentum is redistributed
-between orbit and spin. This yields eccentricity damping and relaxation
-toward more circular states.
+This split extension remains simple compared with the rest of the model. It
+adds only one extra STF tensor and one extra relaxation timescale per body, and
+it does not alter the pairwise $O(N^2)$ force evaluation. The expected benefit
+is specifically in spin-axis evolution: the torque acting on the separately
+relaxing rotational bulge can dissipate precessional energy even when the
+tide-driven quadrupole is dominated by the line-of-centers forcing. That makes
+robust obliquity damping a more realistic outcome of the reduced model.
 
 \section{Relation to Real Problems}
 
-\subsection{What is physically meaningful}
-
-Despite its simplicity, the model retains several genuinely important
-features:
-\begin{itemize}
-\item full three-dimensional orbital motion,
-\item explicit tidal multipoles,
-\item backreaction of those multipoles on the gravitational field,
-\item spin--orbit coupling,
-\item rotational flattening,
-\item deformation-dependent spin inertia,
-\item dissipative lag with adjustable frequency dependence.
-\end{itemize}
-
-These features are sufficient to reproduce the leading qualitative structure
-of tidal evolution.
-
 \subsection{What remains toy-like}
 
-The model is still a reduced model, and this should be stated clearly.
+The model retains the key qualitative features of tidal evolution---full
+three-dimensional orbital motion, explicit tidal multipoles and their
+backreaction, spin--orbit coupling, rotational flattening, and
+frequency-dependent dissipative lag---while remaining in ODE form. This
+suffices to reproduce the leading-order structure of spin synchronization,
+orbital circularization, and obliquity damping qualitatively. However,
+several important simplifications remain.
 
-\begin{itemize}
-\item \textbf{No full hydrodynamics.}
-The interior is not evolved by compressible Navier--Stokes or by a detailed
-anelastic or viscoelastic continuum model.
-
-\item \textbf{No internal stratification.}
-Real planets may contain cores, mantles, oceans, atmospheres, layered
-viscosities, and phase transitions. These are not represented explicitly.
-
-\item \textbf{Effective rather than microscopic rheology.}
-The coefficients $\gamma_a$, $c_{an}$, and $\tau_{an}$ are reduced
-parameters. They represent an effective linear response, not a detailed
-microphysical material law.
-
-\item \textbf{No exact higher-order angular-momentum closure.}
-The leading quadrupole implementation keeps the deformation dependence of the
-spin inertia, but does not explicitly evolve the angular momentum carried by
-the internal deformation. Exact global angular-momentum conservation is
-therefore not enforced beyond the retained leading order.
-
-\item \textbf{Small-deformation regime.}
-The quadrupole model, and the linearized inertia
-\eqref{eq:JS}, are intended for weak to moderate deformations. Very strong
-tides would require higher modes and nonlinear corrections.
-
-\item \textbf{No thermal evolution.}
-Mechanical dissipation is included, but heating, melting, convection, and
-feedback on material parameters are not.
-
-\item \textbf{No permanent triaxial figure unless added.}
-The model describes fluid-like tidal and rotational bulges. A frozen-in
-quadrupole can be added, but is not present by default.
-\end{itemize}
+The interior is not evolved hydrodynamically, and real planets may contain
+cores, mantles, oceans, and layered viscosities that are not represented
+here. The rheological coefficients $\gamma_a$, $c_{an}$, and $\tau_{an}$ are
+effective reduced parameters representing a linearized frequency response, not
+a detailed microphysical material law. The model retains only the leading
+quadrupole angular-momentum correction $\Pi_{S,a}$; higher-order modal
+contributions and a fully systematic continuum angular-momentum closure are
+still omitted, so exact global angular-momentum conservation holds only within
+the retained truncation order. The linearized inertia \eqref{eq:JS} is
+intended for weak to moderate deformations; very strong tides would require
+higher modes and nonlinear corrections. Mechanical dissipation is included,
+but heating, melting, convection, and feedback on material parameters are not.
 
 \subsection{Comparison with common tide models}
 
@@ -1207,67 +1350,53 @@ effective static $k_2$, while the ratio of imaginary to real parts of
 $\chi_a(\sigma)$ determines the phase lag and hence an effective
 $Q^{-1}(\sigma)$.
 
-Thus the present parameters $(\gamma_a,\omega_{a2},c_{an},\tau_{an})$ should
-be viewed as a way to fit or calibrate the complex quadrupolar response of a
+The present parameters $(\gamma_a,\omega_{a2},c_{an},\tau_{an})$ should
+therefore be viewed as a way to fit or calibrate the complex quadrupolar response of a
 body over the frequency range of interest, rather than as a unique microscopic
 material model. With one branch the model resembles a simple constant-lag-like
 response over a limited band, whereas several branches can be chosen to better
 match a desired frequency-dependent $k_2(\sigma)$ and $Q(\sigma)$.
 
-\section{Computational Structure}
+\section{Implementation and Computational Remarks}
 
 The upgraded quadrupole model remains inexpensive compared with full
-hydrodynamics.
+hydrodynamics. For $N$ bodies, the dominant cost of each right-hand-side
+evaluation is the pairwise gravitational and tidal interaction, scaling as
+$O(N^2)$. The additional costs from the refinements are all lower order:
+building and inverting the $3\times3$ inertia tensor $J_a(S_a)$ is $O(N)$,
+the rotational-flattening term is $O(N)$, and $N_{\mathrm{r},a}$ rheology
+branches add $O(NN_{\mathrm{r}})$ state variables and arithmetic. The main
+effect of the improvements is therefore a modest increase in state size and
+per-body algebra, not a qualitative change in complexity.
 
-For $N$ bodies, the dominant cost of each right-hand-side evaluation remains
-the pairwise gravitational and tidal interaction, which scales as
-\begin{equation}
-O(N^2).
-\end{equation}
-
-The additional costs from the refinements are lower order:
-\begin{itemize}
-\item building and inverting the $3\times3$ inertia tensor $J_a(S_a)$ is
-$O(N)$,
-\item the rotational-flattening term is $O(N)$,
-\item $N_{\mathrm{r},a}$ rheology branches add $O(NN_{\mathrm{r}})$ state
-variables and arithmetic.
-\end{itemize}
-
-Thus the qualitative complexity does not change. The main effect is a modest
-increase in state size and per-body algebra.
-
-\section{Implementation Remarks}
-
-For numerical work, the quadrupole model is the recommended starting point.
-A practical state vector for body $a$ is
+The accompanying reference code integrates the quadrupole closure directly.
+For body $a$ the evolved state is
 \begin{equation}
 \bigl(
 X_a,\dot X_a,q_a,\Omega_a,S_a,W_a,Z_{a1},\dots,Z_{aN_{\mathrm{r},a}}
 \bigr),
 \end{equation}
-where $q_a$ is a unit quaternion representing the orientation.
+with an additional split-bulge tensor $B_a$ when the split rotational-bulge
+extension is enabled. Here $q_a$ is a unit quaternion representing the body
+orientation.
 
-Several implementation details are important:
+The key numerical choices are the following:
 \begin{itemize}
-\item The orientation should be advanced with quaternions or a Lie-group
-integrator, then renormalized as needed.
-\item The matrices $S_a$, $W_a$, and $Z_{an}$ should be projected back to
-their symmetric trace-free parts to suppress numerical drift.
-\item In the conservative limit, the orbital force, pair potential, and any
-diagnostic torque should be derived from the same truncated potential. In the
-leading-order quadrupole closure used here, the torque is monitored
-diagnostically rather than inserted as an additional spin forcing term.
-\item The shape-dependent inertia $J_a(S_a)$ should remain positive definite.
-Since $J_a(S_a)=J_{a0}I_3-\tilde c_{J,a}S_a$, this requires
-$J_{a0}-\tilde c_{J,a}\lambda_i(S_a)>0$ for every eigenvalue $\lambda_i(S_a)$.
-Equivalently, the deformation amplitude must remain small enough that no
-eigenvalue of $\tilde c_{J,a}S_a$ reaches $J_{a0}$; approaching that regime signals
-breakdown of the linearized weak-deformation model.
+\item orientations are advanced with quaternions and renormalized as needed,
+\item $S_a$, $W_a$, $Z_{an}$, and when present $B_a$ are stored as full
+$3\times 3$ matrices and reprojected onto their symmetric trace-free parts to
+suppress numerical drift,
+\item the orbital force, pair potential, and quadrupole torque are assembled
+from the same truncated potential, while the spin equation also retains the
+quadrupole-mode angular momentum term
+$\Pi_{S,a}=2\,\operatorname{axl}([W_a,S_a])$ together with the reciprocal
+dissipative torques generated by the active relaxation variables,
+\item the smallest eigenvalue of the shape-dependent inertia tensor is watched
+throughout the run so that the evolution stays in the weak-deformation regime;
+in the one-tensor closure,
+$J_a(S_a)=J_{a0}I_3-\tilde c_{J,a}S_a$, so one must keep
+$\tilde c_{J,a}\lambda_{\max}(S_a)<J_{a0}$.
 \end{itemize}
-
-
-\subsection{Comments on a practical matrix implementation}
 
 A straightforward numerical realization stores each STF quadrupole variable
 $S_a$, $W_a$, and $Z_{an}$ as a full $3\times 3$ matrix rather than in a
@@ -1295,79 +1424,327 @@ J_a(S_a)\dot\Omega_a
 directly, rather than forming $J_a(S_a)^{-1}$ explicitly.
 
 For generalized rheology, initializing each branch near $Z_{an}=S_a$ avoids an
-artificial start-up transient. The present implementation also follows the
-leading-order closure adopted in this paper: it keeps the deformation
-dependence of $J_a(S_a)$ but omits the separate angular momentum carried by the
-deformation itself. Consequently, the conservative diagnostic should be
-constructed from the same truncated reduced energy used by the ODEs, with the
-same coefficient $\tilde c_{J,a}$ appearing in both $J_a(S_a)$ and the
-rotational forcing term. No additional
+artificial start-up transient. The reference implementation follows the
+improved quadrupole closure adopted in this paper: it keeps the deformation
+dependence of $J_a(S_a)$, retains the leading quadrupole angular momentum
+$\Pi_{S,a}=2\,\operatorname{axl}([W_a,S_a])$, and includes the torque
+\eqref{eq:Nbody} explicitly in the spin balance. The conservative diagnostic
+should still be constructed from the same truncated reduced energy used by the
+ODEs, with the same coefficient $\tilde c_{J,a}$ appearing in both
+$J_a(S_a)$ and the rotational forcing term. No additional
 $S_a:\mathrm{STF}(\Omega_a\Omega_a^\top)$ storage term should be added on top of
-$\frac{1}{2}\Omega_a^\top J_a(S_a)\Omega_a$ in this reduced closure. After that
+$\frac{1}{2}\Omega_a^\top J_a(S_a)\Omega_a$ in this closure. After that
 correction, remaining small drift in practical integrations is primarily
 numerical and reflects the use of finite tolerances, post-processed
-dissipation integrals, and the leading-order angular-momentum closure rather
-than an omitted conservative energy reservoir. In production runs one should
-also monitor the smallest
-eigenvalue of $J_a(S_a)$ and reject parameter choices or time steps that drive
-the inertia tensor close to singularity.
-
-
+dissipation integrals, and the residual truncation error of the reduced model
+rather than an omitted conservative energy reservoir. In production runs it is also worth monitoring the smallest eigenvalue of
+$J_a(S_a)$ and rejecting parameter choices or time steps that drive the
+inertia tensor close to singularity.
 
 \section{Illustrative Double-Planet Evolution}
 
-To illustrate the behavior of the quadrupole model, Fig.~\ref{fig:double-planet-tidal}
-shows a representative integration for a close double-planet system. The figure
-is not intended as a parameter survey, but as a compact diagnostic of how the
-reduced model moves energy and angular momentum between orbit, spin, and tidal
-shape variables during long-term evolution.
+To illustrate the qualitative behavior of the quadrupole model, this section
+presents two representative integrations for close double-planet systems. Both
+use the same orbital and spin configuration but differ in the material
+parameters of the planets. Together they exhibit qualitatively distinct
+regimes of tidal evolution: smooth secular decay driven by a quasi-static
+bulge, and impulsive dissipation concentrated in a pair of resonance-passage
+events.
+
+\subsection{Smooth dissipative evolution}
+
+Figure~\ref{fig:double-planet-tidal} shows an integration starting from
+a randomly initialized eccentric, oblique, asynchronously rotating
+configuration with non-zero initial quadrupole deformation. The figure is
+not intended as a parameter survey, but as a compact diagnostic of how the
+reduced model moves energy and angular momentum between orbit, spin, and
+tidal shape variables during long-term evolution.
 
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\textwidth]{Double planet tidal.jpg}
-\caption{Example diagnostics for tidal evolution in a close double-planet
-system evolved with the quadrupole model. The four panels summarize the energy
-budget, the alignment of the spin axes with the orbital normal, the secular
-change of orbital eccentricity and semi-major axis, and the evolution of the
-spin rates relative to the orbital frequency.}
+\caption{Smooth dissipative double-planet integration with the split
+quadrupole model. Both planets start from a non-zero deformation and relax
+rapidly into the quasi-static tidal regime, after which energy is steadily
+drained from the orbit by the lagged quadrupole. The compensated
+mechanical-plus-dissipated energy (red) remains flat to within well under
+one percent of the mechanical energy scale throughout.}
 \label{fig:double-planet-tidal}
 \end{figure*}
 
-The upper-left panel shows the energy bookkeeping. The dashed green curve gives
-the instantaneous mechanical energy of the reduced system, while the black curve
-shows the cumulative dissipated energy. Their sum, plotted in red, remains
-nearly constant throughout the run, indicating that the numerical evolution is
-consistent with the intended dissipative energy balance: mechanical energy is
-steadily removed from the orbit--spin degrees of freedom and transferred into
-heat.
+The upper-left panel shows the energy bookkeeping. The mechanical energy
+(green dashed) and the cumulative dissipated energy (black) each vary by
+roughly 15\% of the initial orbital energy over the course of the run, yet
+their compensated sum (red) remains essentially flat throughout---its total
+variation is well under one percent of the mechanical energy scale. That
+near-constancy confirms that the reduced ODE closure is accounting for
+dissipated energy consistently rather than leaking it into truncated degrees
+of freedom.
 
-The upper-right panel tracks the projection of each planet's spin axis into the
-orbital plane through $|\hat s-(\hat s\cdot\hat h)\hat h|$, where $\hat h$ is the
-orbital angular-momentum direction. After a brief initial transient, both
-curves remain close to unity, so in this example the spins stay almost entirely
-within the orbital plane rather than aligning with the orbital normal. The plot
-therefore provides a direct diagnostic of obliquity evolution in the chosen
-initial configuration.
+The upper-right panel reveals a striking asymmetry between the two bodies.
+Planet~2's squared deformation rate $\|W\|_F^2$ and lag $\|S-Z\|_F^2$ both
+spike to roughly $0.10$ at the start, then collapse by two to three orders of
+magnitude within the first $\sim\!100$ time units. Planet~1's analogous
+quantities are so small they barely register on the same scale. The burst for
+planet~2 is essentially a rapid re-equilibration from an initial state far from
+tidal equilibrium. After that transient, both bodies settle into the
+slowly-evolving quasi-static regime in which the quadrupole closely tracks its
+instantaneous equilibrium value.
 
-The lower-left panel shows the secular orbital evolution. The eccentricity
-(monotonic purple curve) decreases steadily, demonstrating circularization.
-At the same time, the semi-major axis (gray dashed curve, read on the right
-axis) also shrinks, showing that dissipation removes orbital energy and drives
-a slow inspiral. Small superposed oscillations are visible, but the dominant
-trend is a smooth long-term decay of both quantities.
+The lower-left panel shows the secular orbital evolution. Both the eccentricity
+and the semi-major axis decrease monotonically, and their curves run roughly
+parallel throughout, reflecting the coupled circularization--inspiral expected
+from tidal dissipation. The decay is not uniform: there is a noticeable
+acceleration around $t \approx 4000$ where both curves steepen before settling
+into a final decline.
 
 The lower-right panel compares the spin angular frequencies of the two planets
-with the orbital mean motion. Planet~1 starts with a strong transient and then
-relaxes toward a nearly steady super-synchronous rotation, while Planet~2 stays
-at a lower but also nearly steady spin rate. Meanwhile the orbital frequency
-(black dashed curve) increases gradually as the orbit contracts. The panel thus
-illustrates the expected competition between tidal spin evolution and the
-changing orbital timescale.
+with the orbital mean motion. Both spin rates are nearly constant on the scale
+of the plot; any spin-down is small compared with the rise in orbital mean
+motion as the orbit contracts. The approach toward synchronization is therefore
+driven primarily by orbital inspiral rather than by spin-down. Planet~2,
+spinning at $\sim\!0.84$, ends the run at roughly twice the final orbital
+frequency---substantially closer to synchronization than planet~1, which spins
+at $\sim\!1.19$, or nearly three times the final orbital mean motion. The
+spin-relaxation timescale evidently exceeds the integration window by a
+considerable margin.
 
-Taken together, the four diagnostics show that even the reduced quadrupole
-closure reproduces the main qualitative signatures of tidal evolution: a
-mechanically consistent dissipative energy budget, long-term orbital decay,
-circularization, and coupled spin evolution on the same integration.
+\subsection{Resonance-passage evolution}
+
+Figure~\ref{fig:curious-double-planet} shows a second integration run with
+the same orbital and spin initial conditions but with both planets initialized
+at zero deformation ($S_0 = W_0 = 0$) and with higher elastic mode stiffnesses.
+The resulting dynamics are qualitatively different and considerably more
+structured.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{Curious Double Planet.jpg}
+\caption{Resonance-passage double-planet integration. Both planets are
+initialized with zero quadrupole deformation. The run reveals two isolated
+bursts of internal quadrupole activity---at $t\approx 1000$ (planet~1
+dominant, blue) and $t\approx 4500$ (planet~2 dominant, orange)---each
+accompanied by a sudden step-down in eccentricity and a corresponding jump
+in cumulative dissipation. Between these events the system evolves
+quasi-statically and the spin rates remain essentially frozen. The
+compensated energy (red, upper-left) is flat throughout, confirming that
+the impulsive events are physically captured by the reduced ODE closure
+rather than being numerical artifacts.}
+\label{fig:curious-double-planet}
+\end{figure*}
+
+Because both planets start from zero deformation, there is no initial
+equilibration transient: the quadrupole activity begins near zero and stays
+there until the first event. The evolution then proceeds in three distinct
+phases separated by the two bursts.
+
+\textbf{Between events, quasi-static evolution.}
+During the long quiet intervals---$t \lesssim 900$ and $1200 \lesssim t
+\lesssim 4300$---the reduced dynamics are indistinguishable from ordinary
+quasi-static tidal friction. The bulge tracks the instantaneous tidal
+forcing closely ($\|W\|_F^2$ and $\|S-Z\|_F^2$ both small), the orbit
+circularizes and contracts gradually, and the spin rates are essentially
+constant. This is the regime captured by the smooth run above, but here
+the interlude is interrupted.
+
+\textbf{Resonance passages.}
+As the orbit slowly contracts, the orbital mean motion $n$ increases.
+Because the orbital forcing of a tidally deformable body contains harmonics
+of the mean motion, the effective forcing frequency near the body's natural
+quadrupole frequency $\omega_{a2}$ sweeps upward in time. When a harmonic
+$k n$ passes through $\omega_{a2}$, the quadrupole mode is briefly driven
+near resonance: the deformation amplitude rises, dissipation intensifies,
+and angular momentum is exchanged between the orbit and the internal
+degrees of freedom before the mode is detuned by the resulting orbital
+change. The event is self-limiting---the orbital shift moves the system
+off resonance---leaving a permanent step-down in eccentricity and semi-major
+axis. Resonance sweeping of this kind is a recognized mechanism in celestial
+mechanics, though its occurrence in a reduced ODE model
+of this type is instructive in its own right.
+
+In the present run, planet~1 ($\omega_{12} = 4.54$) undergoes its passage
+first, at $t \approx 1000$. The burst in $\|W\|_F^2$ for planet~1 (blue,
+upper-right panel) is large and multi-peaked, indicating that the system
+oscillates through the resonance over several orbital periods before settling.
+Planet~2 ($\omega_{22} = 5.06$) resonates later, at $t \approx 4500$, and
+the corresponding orange burst is similarly structured. The two mode
+frequencies are close but distinct, so the passages occur at different times
+as the mean motion climbs through the relevant harmonic.
+
+Each event has a clear signature in all four panels simultaneously: a burst
+in the quadrupole activity (upper-right), a step in cumulative dissipation
+and a corresponding drop in mechanical energy (upper-left), and step-down
+features in both eccentricity and semi-major axis (lower-left). The fact
+that all four panels are consistent is a non-trivial check: the impulsive
+events are not numerical artifacts but are physically coherent within the
+reduced ODE closure.
+
+\textbf{Spin evolution.}
+The lower-right panel shows that both spin rates are essentially frozen
+throughout, including during the bursts. The spin-down from 3.73 to 3.44
+(planet~1) and 2.63 to 2.42 (planet~2) measured at the end of the run
+represents a change of roughly 8\% in both cases over the full integration,
+but this change is spread so uniformly that it is imperceptible on the
+scale of the panel. The orbital mean motion, by contrast, rises visibly.
+The resonance passages do not cause detectable kicks to the spin rate,
+consistent with the expectation that the torque impulse during a short
+resonance event is much smaller than the angular momentum stored in the spin.
+
+\textbf{Energy bookkeeping.}
+The upper-left panel confirms that the conserved mechanical-plus-dissipated
+sum (red) is flat throughout---including during both burst events---to within
+the numerical precision of the run. The total dissipated energy reaches
+$8.9 \times 10^{-3}$, split roughly evenly between the two events and the
+quiet intervals. This is a more stringent test of the reduced closure than
+the smooth run, because the impulsive events require the energy bookkeeping
+to remain consistent during rapid transient dynamics rather than only in the
+quasi-static limit.
+
+Taken together, the two integrations show that the reduced quadrupole ODE
+closure is capable of representing qualitatively different regimes of tidal
+evolution within the same framework, and that the energy bookkeeping remains
+mechanically consistent in both the smooth and impulsive cases.
+
+\section{Model verification}
+
+The reference implementation includes a regression-style driver
+\texttt{run\_tests()} that integrates representative two-body problems,
+reconstructs derived orbital and spin diagnostics from the saved trajectory,
+and then applies explicit quantitative pass/fail thresholds. Each case also
+writes a diagnostic plot. The purpose of the suite is not to calibrate the
+model against a particular planetary system, but to verify that the reduced ODE
+closure behaves in the limits it was designed to capture: the null Kepler
+limit, conservative equilibrium, quasi-static response, rotational
+flattening, rheological distinguishability, secular circularization, spin
+synchronization, and obliquity damping.
+
+\subsection{Implemented checks}
+
+\paragraph{01\_null\_kepler\_limit}
+This case verifies that the code reduces to ordinary two-body Kepler motion
+when all quadrupole couplings are turned off.
+\par\smallskip
+\textbf{Pass criteria.} Maximum drift in eccentricity $<5\times10^{-6}$,
+maximum drift in semi-major axis $<5\times10^{-6}$, and maximum drift in the
+conservative energy diagnostic $<5\times10^{-7}$.
+\par\smallskip
+\textbf{Current result.} All three margins are passed comfortably, with
+$\max|\Delta e|=3.674\times10^{-9}$,
+$\max|\Delta a|=1.790\times10^{-8}$, and
+$\max|\Delta E_{\mathrm{total}}|=7.308\times10^{-10}$.
+
+\paragraph{02\_conservative\_equilibrium}
+This case checks that a circular synchronized configuration initialized near
+the reduced static quadrupole equilibrium remains there in the nondissipative
+limit.
+\par\smallskip
+\textbf{Pass criteria.} Maximum total-energy drift $<2\times10^{-5}$,
+maximum eccentricity $<2\times10^{-3}$, and mean bulge--line-of-centers angle
+$<2^\circ$.
+\par\smallskip
+\textbf{Current result.} The run passes by a wide margin with
+$\max|\Delta E_{\mathrm{total}}|=1.019\times10^{-14}$,
+$e_{\max}=2.862\times10^{-7}$, and mean bulge angle $0.579^\circ$.
+
+\paragraph{03\_quasi\_static\_bulge}
+This case verifies that strongly damped quadrupoles track the instantaneous
+hydrostatic tide in the slow-forcing regime.
+\par\smallskip
+\textbf{Pass criteria.} Mean relative shape error in the late-time part of the
+run $<0.20$, final relative shape error $<0.10$, and mean bulge lag
+$<5^\circ$.
+\par\smallskip
+\textbf{Current result.} The implementation passes with mean and final
+relative shape errors both $8.449\times10^{-3}$ and a mean bulge lag of
+$0.393^\circ$.
+
+\paragraph{04\_rotational\_flattening}
+This case isolates the spin-supported oblateness mechanism and confirms that
+the shape equation reproduces the expected oblate equilibrium when the tidal
+field is negligible.
+\par\smallskip
+\textbf{Pass criteria.} Relative error to the isolated rotational equilibrium
+$<0.10$ and the presence of an oblate STF eigenvalue pattern.
+\par\smallskip
+\textbf{Current result.} The run passes with relative error
+$3.321\times10^{-9}$ and eigenvalues
+$[-0.0693,\,0.0347,\,0.0347]$, as expected for an oblate figure.
+
+\paragraph{05\_rheology\_comparison}
+This comparison confirms that the direct viscous closure and a delayed
+Maxwell-like branch closure are observationally distinguishable in the same
+orbital setup. The code implements this as two companion runs,
+\texttt{05A\_rheology\_viscous} and \texttt{05B\_rheology\_maxwell}.
+\par\smallskip
+\textbf{Pass criteria.} The absolute difference in mean bulge lag must exceed
+$0.5^\circ$, and the relative difference in final cumulative dissipation must
+exceed $5\%$.
+\par\smallskip
+\textbf{Current result.} The lag difference is $27.174^\circ$ and the relative
+dissipation difference is $78.74\%$, with the viscous run giving a mean lag of
+$2.689^\circ$ and final cumulative dissipation $8.518119\times10^{-5}$, while
+the Maxwell-like run gives a mean lag of $29.863^\circ$ and final cumulative
+dissipation $1.810825\times10^{-5}$.
+
+\paragraph{06\_circularization}
+This case verifies the expected secular dissipative trend in an eccentric
+binary with active tides.
+\par\smallskip
+\textbf{Pass criteria.} Final eccentricity below the initial value, final
+semi-major axis below the initial value, and relative drift in the compensated
+energy diagnostic below $2\%$.
+\par\smallskip
+\textbf{Current result.} The orbit evolves from $e_0=0.4500$ to
+$e_f=0.4375$ and from $a_0=2.6000$ to $a_f=2.5478$, while the relative drift of
+mechanical plus dissipated energy is numerically zero to the reported
+precision.
+
+\paragraph{07\_spin\_synchronization}
+This case confirms that a super-synchronous spin is torqued toward the orbital
+frequency when a persistent tidal lag is present.
+\par\smallskip
+\textbf{Pass criteria.} The monitored spin ratio must decrease, the final
+value must be closer to $1$ than the initial one, the mean bulge lag must
+exceed $0.2^\circ$, and the minimum spin ratio over the run must fall below the
+initial value.
+\par\smallskip
+\textbf{Current result.} The tracked ratio decreases from $4.0000$ to
+$3.9820$, the minimum value is $3.9820$, and the mean bulge lag is
+$2.132^\circ$.
+
+\paragraph{08\_obliquity\_survey}
+This survey tests whether the model produces net obliquity damping across a
+small grid of tilted initial states and damping strengths rather than only in a
+single hand-picked example. The implementation surveys the grid
+$\{15^\circ,45^\circ,75^\circ\}\times\{0.10,0.30,0.60\}$ and measures the
+change in the spin--orbit angle over each run.
+\par\smallskip
+\textbf{Pass criteria.} At least half of the survey cases must have
+$\Delta\theta_{\mathrm{spin-orbit}}<0$, and the median
+$\Delta\theta_{\mathrm{spin-orbit}}$ over the grid must also be negative.
+\par\smallskip
+\textbf{Current result.} The passing fraction is $0.667$ and the median change
+is $-0.0270^\circ$. Obliquity damping is therefore present across most, though not
+all, of the sampled parameter box.
+
+\subsection{Current status of the model}
+
+At present the suite reports \emph{Passed 8 / 8 tests}. The nondissipative
+checks are particularly strong: the null-Kepler and conservative-equilibrium
+cases show only tiny residual drifts, at the level of $10^{-9}$ to $10^{-14}$
+in the reported diagnostics. The quasi-static and rotational-flattening tests
+also indicate that the retained STF shape equations reproduce their intended
+instantaneous equilibria with substantial margin.
+
+The dissipative tests show the expected qualitative behavior of the reduced
+model without spoiling the compensated energy bookkeeping. In the present run
+set the code clearly distinguishes viscous and Maxwell-like responses,
+produces secular circularization and inspiral in eccentric systems, drives a
+super-synchronous spin in the correct direction, and yields net obliquity
+damping in a majority of the sampled survey cases. The last point should still
+be read as a trend rather than a theorem: the current survey indicates that the
+model is capable of obliquity damping over a useful region of parameter space,
+not that every admissible parameter choice must damp monotonically.
 
 \section{Conclusion}
 
@@ -1379,20 +1756,27 @@ shape-dependent spin inertia, and generalized rheology. The second is a quadrupo
 suitable for direct numerical integration.
 
 Relative to the simplest damped-quadrupole tide model, the present version is
-improved in three important respects: it allows the spin inertia to vary with
+improved in four respects: it allows the spin inertia to vary with
 the deformation, it includes rotational flattening through the same reduced
-spin--shape coefficient that enters the spin kinetic energy, and it supports
-frequency-dependent lag through internal relaxation branches. These additions
-preserve the ODE structure of the model while making its tidal evolution more
-physically credible.
+spin--shape coefficient that enters the spin kinetic energy, it supports
+frequency-dependent lag through internal relaxation branches, and it retains
+the leading angular momentum carried by the quadrupole mode itself. This last
+correction is small enough to preserve the basic ODE structure of the model,
+yet important enough to restore the explicit quadrupole torque in the spin
+balance and thereby improve the physical credibility of obliquity evolution.
 
 The model remains a reduced model and not a full geophysical simulator.
 Nevertheless, it captures the key orbit--spin--shape couplings needed for
-tidal bulges, lag, synchronization, obliquity damping, and orbital
-circularization. It is therefore a useful intermediate framework between
+tidal bulges, lag, synchronization, and orbital circularization. The standard
+one-tensor quadrupole closure also provides a mechanically consistent reduced
+description of spin evolution, including the leading modal angular momentum
+carried by the quadrupole. For applications in which secular obliquity damping
+is a primary target, however, the split-tensor extension
+\eqref{eq:IquadSplit}--\eqref{eq:spinquadSplit} supplies the additional
+orientational degrees of freedom associated with distinct tidal and rotational
+bulges. The framework is therefore a useful intermediate model between
 point-mass celestial mechanics and full interior simulation.
-
 \section*{Acknowledgment}
 The author wishes to acknowledge the use of large language models (Google's Gemini and OpenAI's GPT) for assistance in improving the language and clarity of the manuscript, for aiding in the implementation of the numerical code and derivations of some of the analytical results. The results were tested and verified by the author.
 
-\end{document}
+\end{document} 
